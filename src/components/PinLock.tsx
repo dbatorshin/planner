@@ -1,6 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Lock, Delete, ShieldCheck, KeyRound } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Lock, Delete, ShieldCheck, KeyRound, ScanFace } from 'lucide-react';
 import { haptic } from '../utils/haptics';
+import {
+  isBiometricsConfigured,
+  hasBiometricsCredential,
+  isPlatformAuthenticatorAvailable,
+  isBiometricsDismissed,
+  setBiometricsDismissed,
+  registerBiometrics,
+  verifyBiometrics,
+  clearBiometrics,
+} from '../utils/biometrics';
 
 interface PinLockProps {
   onUnlock: () => void;
@@ -44,6 +54,7 @@ export function removeAppPin(): void {
   try {
     localStorage.removeItem(PIN_STORAGE_KEY);
     sessionStorage.removeItem(UNLOCKED_SESSION_KEY);
+    clearBiometrics();
   } catch {}
 }
 
@@ -55,6 +66,17 @@ export const PinLock: React.FC<PinLockProps> = ({ onUnlock }) => {
   );
   const [error, setError] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
+  const [isBiometricScanning, setIsBiometricScanning] = useState(false);
+  const [isBiometricSupported, setIsBiometricSupported] = useState(false);
+
+  const isScanningRef = useRef(false);
+  const pinRef = useRef(pin);
+  pinRef.current = pin;
+
+  // Check hardware biometrics availability
+  useEffect(() => {
+    isPlatformAuthenticatorAvailable().then(setIsBiometricSupported);
+  }, []);
 
   const triggerError = (msg: string) => {
     setError(msg);
@@ -70,8 +92,79 @@ export const PinLock: React.FC<PinLockProps> = ({ onUnlock }) => {
     }, 600);
   };
 
+  const attemptBiometricUnlock = useCallback(
+    async (isUserInitiated = false) => {
+      if (isScanningRef.current) return;
+      if (!isUserInitiated && pinRef.current.length > 0) return;
+
+      isScanningRef.current = true;
+      setIsBiometricScanning(true);
+
+      try {
+        const res = await verifyBiometrics();
+        if (res.success) {
+          haptic.success();
+          try {
+            sessionStorage.setItem(UNLOCKED_SESSION_KEY, 'true');
+          } catch {}
+          onUnlock();
+          return;
+        } else {
+          if (isUserInitiated && res.error && !res.error.includes('отменено')) {
+            triggerError(res.error);
+          }
+        }
+      } catch (err: any) {
+        console.log('Biometric unlock attempt:', err);
+      } finally {
+        setIsBiometricScanning(false);
+        isScanningRef.current = false;
+      }
+    },
+    [onUnlock]
+  );
+
+  // Auto-scan Face ID on mount or on first screen tap
+  useEffect(() => {
+    if (step !== 'enter') return;
+    if (!isBiometricsConfigured()) return;
+
+    let isMounted = true;
+    let gestureFired = false;
+
+    // 1. Automatic trigger after 200ms
+    const timer = setTimeout(() => {
+      if (isMounted && !gestureFired) {
+        attemptBiometricUnlock(false);
+      }
+    }, 200);
+
+    // 2. Fallback: on first touch/tap anywhere on the screen
+    const onFirstInteraction = (e: Event) => {
+      if (gestureFired) return;
+      const target = e.target as HTMLElement | null;
+      // If user is intentionally tapping a numeric digit, let manual PIN typing proceed
+      if (target?.closest('button[data-digit]')) {
+        gestureFired = true;
+        return;
+      }
+      gestureFired = true;
+      attemptBiometricUnlock(true);
+    };
+
+    window.addEventListener('pointerdown', onFirstInteraction, { capture: true, once: true });
+    window.addEventListener('touchstart', onFirstInteraction, { capture: true, once: true });
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      window.removeEventListener('pointerdown', onFirstInteraction, { capture: true });
+      window.removeEventListener('touchstart', onFirstInteraction, { capture: true });
+    };
+  }, [step, attemptBiometricUnlock]);
+
   const handleDigit = useCallback(
-    (digit: string) => {
+    async (digit: string) => {
       if (pin.length >= 4) return;
       haptic.light();
       setError(null);
@@ -87,6 +180,20 @@ export const PinLock: React.FC<PinLockProps> = ({ onUnlock }) => {
             try {
               sessionStorage.setItem(UNLOCKED_SESSION_KEY, 'true');
             } catch {}
+
+            // Auto-bind biometrics if available and not configured yet
+            const available = await isPlatformAuthenticatorAvailable();
+            if (available && !hasBiometricsCredential() && !isBiometricsDismissed()) {
+              try {
+                const reg = await registerBiometrics();
+                if (reg.success) {
+                  haptic.success();
+                } else {
+                  setBiometricsDismissed(true);
+                }
+              } catch {}
+            }
+
             onUnlock();
           } else {
             triggerError('Неверный PIN-код');
@@ -103,6 +210,18 @@ export const PinLock: React.FC<PinLockProps> = ({ onUnlock }) => {
             // Success! Save PIN
             haptic.success();
             setAppPin(nextPin);
+
+            // Bind Face ID / Touch ID hardware biometrics on initial setup
+            const available = await isPlatformAuthenticatorAvailable();
+            if (available) {
+              try {
+                const reg = await registerBiometrics();
+                if (reg.success) {
+                  haptic.success();
+                }
+              } catch {}
+            }
+
             onUnlock();
           } else {
             triggerError('PIN-коды не совпали. Попробуйте снова');
@@ -119,6 +238,24 @@ export const PinLock: React.FC<PinLockProps> = ({ onUnlock }) => {
     setPin((prev) => prev.slice(0, -1));
     setError(null);
   }, [pin]);
+
+  const handleBiometricButtonClick = async () => {
+    haptic.light();
+    if (!isBiometricsConfigured()) {
+      if (!hasBiometricsCredential()) {
+        const reg = await registerBiometrics();
+        if (reg.success) {
+          haptic.success();
+          try {
+            sessionStorage.setItem(UNLOCKED_SESSION_KEY, 'true');
+          } catch {}
+          onUnlock();
+          return;
+        }
+      }
+    }
+    attemptBiometricUnlock(true);
+  };
 
   // Support hardware physical keyboard
   useEffect(() => {
@@ -170,7 +307,7 @@ export const PinLock: React.FC<PinLockProps> = ({ onUnlock }) => {
         {/* Subtitle / Prompt */}
         <p className="text-xs sm:text-sm font-bold mb-6" style={{ color: 'var(--sheet-sub)' }}>
           {step === 'enter'
-            ? 'Введите 4-значный код для доступа'
+            ? 'Введите 4-значный код или используйте Face ID'
             : step === 'create'
             ? 'Придумайте 4 цифры для защиты ваших дел'
             : 'Введите код ещё раз для подтверждения'}
@@ -214,6 +351,7 @@ export const PinLock: React.FC<PinLockProps> = ({ onUnlock }) => {
           {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
             <button
               key={digit}
+              data-digit={digit}
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => handleDigit(digit)}
@@ -229,14 +367,37 @@ export const PinLock: React.FC<PinLockProps> = ({ onUnlock }) => {
             </button>
           ))}
 
-          {/* Row 4: Key icon, 0, Backspace */}
-          <div className="w-16 h-16 sm:w-18 sm:h-18 mx-auto flex items-center justify-center opacity-40">
-            {step === 'enter' && (
-              <KeyRound className="w-5 h-5" style={{ color: 'var(--sheet-sub)' }} />
-            )}
-          </div>
+          {/* Row 4: Face ID / Biometrics button, 0, Backspace */}
+          {step === 'enter' && isBiometricSupported ? (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={handleBiometricButtonClick}
+              style={{
+                background: 'var(--sheet-card-bg)',
+                color: 'var(--theme-primary)',
+                outline: 'none',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+              className="w-16 h-16 sm:w-18 sm:h-18 mx-auto rounded-full flex items-center justify-center cursor-pointer shadow-sm active:scale-90 transition-all select-none hover:opacity-90 group relative"
+              title="Войти по Face ID / Биометрии"
+            >
+              <ScanFace
+                className={`w-7 h-7 stroke-[2.2] transition-transform ${
+                  isBiometricScanning ? 'scale-110 animate-pulse text-sky-400' : 'group-hover:scale-110'
+                }`}
+              />
+            </button>
+          ) : (
+            <div className="w-16 h-16 sm:w-18 sm:h-18 mx-auto flex items-center justify-center opacity-30 select-none">
+              {step === 'enter' && (
+                <KeyRound className="w-5 h-5" style={{ color: 'var(--sheet-sub)' }} />
+              )}
+            </div>
+          )}
 
           <button
+            data-digit="0"
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => handleDigit('0')}
@@ -272,8 +433,8 @@ export const PinLock: React.FC<PinLockProps> = ({ onUnlock }) => {
         {/* Footer Note */}
         <p className="text-[11px] font-bold mt-8 max-w-xs" style={{ color: 'var(--sheet-sub)' }}>
           {step === 'enter'
-            ? 'Защита личных данных на вашем устройстве'
-            : 'Код сохранится в вашем браузере для безопасного входа'}
+            ? 'Мгновенный вход по лицу или резервному коду'
+            : 'Код сохранится на устройстве для безопасного доступа'}
         </p>
       </div>
     </div>

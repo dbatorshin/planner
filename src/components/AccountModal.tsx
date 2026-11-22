@@ -11,10 +11,18 @@ import {
   CheckCircle2,
   Lock,
   KeyRound,
+  ScanFace,
 } from 'lucide-react';
 import { usePlanner } from '../context/PlannerContext';
 import { haptic } from '../utils/haptics';
 import { isPinConfigured, removeAppPin, lockApp } from './PinLock';
+import {
+  isBiometricsEnabled,
+  setBiometricsEnabled,
+  hasBiometricsCredential,
+  isPlatformAuthenticatorAvailable,
+  registerBiometrics,
+} from '../utils/biometrics';
 
 interface AccountModalProps {
   isOpen: boolean;
@@ -37,12 +45,44 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
   const [copiedLink, setCopiedLink] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [hasPinState, setHasPinState] = useState(() => isPinConfigured());
+  const [biometricsEnabled, setBiometricsEnabledState] = useState(() => isBiometricsEnabled());
+  const [isBiometricsSupported, setIsBiometricsSupported] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setHasPinState(isPinConfigured());
+      setBiometricsEnabledState(isBiometricsEnabled());
+      isPlatformAuthenticatorAvailable().then(setIsBiometricsSupported);
     }
   }, [isOpen]);
+
+  const handleToggleBiometrics = async (checked: boolean) => {
+    haptic.light();
+    if (checked) {
+      if (!hasPinState) {
+        showToast('Сначала создайте PIN-код');
+        return;
+      }
+      if (hasBiometricsCredential()) {
+        setBiometricsEnabled(true);
+        setBiometricsEnabledState(true);
+        showToast('Вход по Face ID включён');
+      } else {
+        const res = await registerBiometrics();
+        if (res.success) {
+          setBiometricsEnabledState(true);
+          showToast('Face ID успешно привязан');
+        } else {
+          setBiometricsEnabledState(false);
+          showToast(res.error || 'Не удалось привязать Face ID');
+        }
+      }
+    } else {
+      setBiometricsEnabled(false);
+      setBiometricsEnabledState(false);
+      showToast('Вход по биометрии выключен');
+    }
+  };
 
   useEffect(() => {
     if (appData?.account) {
@@ -382,7 +422,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
 
           {/* Section: Security & PIN Code */}
           <div
-            className="rounded-2xl p-3.5 space-y-2.5"
+            className="rounded-2xl p-3.5 space-y-3"
             style={{
               background: 'var(--sheet-card-bg)',
               boxShadow: 'var(--sheet-card-shadow)',
@@ -400,6 +440,54 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
                 ? 'PIN-код активен. Доступ к вашему планеру надёжно защищён 4-значным паролем.'
                 : 'PIN-код не установлен. При следующем входе приложение предложит задать 4-значный код.'}
             </p>
+
+            {/* Face ID / Biometrics Switch */}
+            <div
+              className="flex items-center justify-between p-3 rounded-xl transition-all"
+              style={{
+                background: 'var(--sheet-bg)',
+              }}
+            >
+              <div className="pr-3 flex items-center gap-2.5">
+                <div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                  style={{
+                    background: 'var(--theme-accent-soft)',
+                    color: 'var(--theme-primary)',
+                  }}
+                >
+                  <ScanFace className="w-4 h-4 stroke-[2.2]" />
+                </div>
+                <div>
+                  <span className="text-xs font-black block" style={{ color: 'var(--sheet-title)' }}>
+                    Вход по Face ID / Биометрии
+                  </span>
+                  <span className="text-[11px] font-semibold block" style={{ color: 'var(--sheet-sub)' }}>
+                    {isBiometricsSupported
+                      ? biometricsEnabled
+                        ? 'Мгновенный вход по лицу или пальцу'
+                        : 'Выключено. Для входа используется 4-значный PIN'
+                      : 'Биометрия не поддерживается данным устройством'}
+                  </span>
+                </div>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  disabled={!isBiometricsSupported || !hasPinState}
+                  checked={biometricsEnabled}
+                  onChange={(e) => handleToggleBiometrics(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div
+                  className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-disabled:opacity-40"
+                  style={{
+                    backgroundColor: biometricsEnabled && hasPinState ? 'var(--theme-primary)' : undefined,
+                  }}
+                />
+              </label>
+            </div>
 
             <div className="flex flex-wrap gap-2 pt-1">
               <button
@@ -422,6 +510,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
                     if (window.confirm('Сбросить PIN-код? После этого вход будет свободным до создания нового кода.')) {
                       removeAppPin();
                       setHasPinState(false);
+                      setBiometricsEnabledState(false);
                       haptic.success();
                       showToast('PIN-код сброшен');
                     }
