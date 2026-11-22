@@ -276,7 +276,7 @@ export const PinLock: React.FC<PinLockProps> = ({ onUnlock }) => {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-2xl animate-in fade-in duration-300 select-none"
       style={{
-        background: 'var(--topbar-bg)',
+        background: 'var(--bg-body)',
       }}
     >
       <div className="w-full max-w-sm flex flex-col items-center text-center">
@@ -296,7 +296,7 @@ export const PinLock: React.FC<PinLockProps> = ({ onUnlock }) => {
         </div>
 
         {/* Title */}
-        <h2 className="text-xl sm:text-2xl font-black tracking-tight mb-1" style={{ color: 'var(--sheet-title)' }}>
+        <h2 className="text-xl sm:text-2xl font-black tracking-tight mb-1" style={{ color: 'var(--glass-text-title)' }}>
           {step === 'enter'
             ? 'Вход в Планер'
             : step === 'create'
@@ -305,7 +305,7 @@ export const PinLock: React.FC<PinLockProps> = ({ onUnlock }) => {
         </h2>
 
         {/* Subtitle / Prompt */}
-        <p className="text-xs sm:text-sm font-bold mb-6" style={{ color: 'var(--sheet-sub)' }}>
+        <p className="text-xs sm:text-sm font-bold mb-6" style={{ color: 'var(--glass-text-sub)' }}>
           {step === 'enter'
             ? 'Введите 4-значный код или используйте Face ID'
             : step === 'create'
@@ -329,10 +329,10 @@ export const PinLock: React.FC<PinLockProps> = ({ onUnlock }) => {
                     ? 'bg-rose-500 scale-110 shadow-[0_0_10px_rgba(244,63,94,0.6)]'
                     : isFilled
                     ? 'scale-125 shadow-md'
-                    : 'opacity-30'
+                    : 'opacity-40'
                 }`}
                 style={{
-                  background: error ? undefined : isFilled ? 'var(--theme-primary)' : 'var(--sheet-sub)',
+                  background: error ? undefined : isFilled ? 'var(--theme-primary)' : 'var(--glass-text-sub)',
                 }}
               />
             );
@@ -389,9 +389,9 @@ export const PinLock: React.FC<PinLockProps> = ({ onUnlock }) => {
               />
             </button>
           ) : (
-            <div className="w-16 h-16 sm:w-18 sm:h-18 mx-auto flex items-center justify-center opacity-30 select-none">
+            <div className="w-16 h-16 sm:w-18 sm:h-18 mx-auto flex items-center justify-center opacity-40 select-none">
               {step === 'enter' && (
-                <KeyRound className="w-5 h-5" style={{ color: 'var(--sheet-sub)' }} />
+                <KeyRound className="w-5 h-5" style={{ color: 'var(--glass-text-sub)' }} />
               )}
             </div>
           )}
@@ -431,7 +431,7 @@ export const PinLock: React.FC<PinLockProps> = ({ onUnlock }) => {
         </div>
 
         {/* Footer Note */}
-        <p className="text-[11px] font-bold mt-8 max-w-xs" style={{ color: 'var(--sheet-sub)' }}>
+        <p className="text-[11px] font-bold mt-8 max-w-xs" style={{ color: 'var(--glass-text-sub)' }}>
           {step === 'enter'
             ? 'Мгновенный вход по лицу или резервному коду'
             : 'Код сохранится на устройстве для безопасного доступа'}
