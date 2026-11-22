@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <!-- Midnight Sapphire Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#080e1e" />
+      <stop offset="50%" stop-color="#0f1b33" />
+      <stop offset="100%" stop-color="#182c4d" />
+    </linearGradient>
+
+    <!-- Outer Rim Highlight -->
+    <linearGradient id="rimGlow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.35" />
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="0.05" />
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.1" />
+    </linearGradient>
+
+    <!-- Electric Cyan Arc Gradient (Interval) -->
+    <linearGradient id="cyanArc" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="50%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#7dd3fc" />
+    </linearGradient>
+
+    <!-- Dial Plate Gradient -->
+    <radialGradient id="dialPlate" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" stop-color="#142442" />
+      <stop offset="85%" stop-color="#0d1729" />
+      <stop offset="100%" stop-color="#070d18" />
+    </radialGradient>
+
+    <!-- Neon Glow Filter -->
+    <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <!-- Soft Drop Shadow for Dial -->
+    <filter id="dialShadow" x="-15%" y="-15%" width="130%" height="135%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <!-- Squircle Base Canvas -->
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#bgGrad)" />
+  <rect x="25" y="25" width="462" height="462" rx="111" stroke="url(#rimGlow)" stroke-width="2" />
+
+  <!-- Inner Chronometer Dial -->
+  <circle cx="256" cy="256" r="168" fill="url(#dialPlate)" filter="url(#dialShadow)" />
+
+  <!-- Subtle 24-Hour Track Base -->
+  <circle cx="256" cy="256" r="132" stroke="#1e293b" stroke-width="16" stroke-linecap="round" opacity="0.8" />
+
+  <!-- 12-Hour Tick Dots -->
+  <circle cx="256" cy="124" r="3.5" fill="#64748b" opacity="0.6" />
+  <circle cx="388" cy="256" r="3.5" fill="#64748b" opacity="0.6" />
+  <circle cx="256" cy="388" r="3.5" fill="#64748b" opacity="0.6" />
+  <circle cx="124" cy="256" r="3.5" fill="#64748b" opacity="0.6" />
+
+  <!-- Glowing Time Interval Arc (Planner Time-Block: 8:00 to 12:00) -->
+  <!-- Arc from 240 deg (x=141.7, y=322) to 0 deg/12 o'clock (x=256, y=124) -->
+  <path d="M 141.7 322 A 132 132 0 0 1 256 124"
+        stroke="url(#cyanArc)"
+        stroke-width="18"
+        stroke-linecap="round"
+        filter="url(#neonGlow)" />
+
+  <!-- Active Milestone Glowing Node at 12:00 -->
+  <circle cx="256" cy="124" r="9" fill="#ffffff" filter="url(#neonGlow)" />
+  <circle cx="256" cy="124" r="4.5" fill="#0284c7" />
+
+  <!-- Clock Hands (Planner Minimalist Geometry) -->
+  <!-- Hour hand pointing to ~8:00 / 240 deg -->
+  <line x1="256" y1="256" x2="192" y2="293"
+        stroke="#ffffff"
+        stroke-width="12"
+        stroke-linecap="round" />
+
+  <!-- Minute hand pointing to 12:00 (straight up) -->
+  <line x1="256" y1="256" x2="256" y2="152"
+        stroke="url(#cyanArc)"
+        stroke-width="10"
+        stroke-linecap="round"
+        filter="url(#neonGlow)" />
+
+  <!-- Center Pivot with Glowing Accent -->
+  <circle cx="256" cy="256" r="16" fill="#0c182b" stroke="#38bdf8" stroke-width="4" />
+  <circle cx="256" cy="256" r="6" fill="#ffffff" />
+</svg>
