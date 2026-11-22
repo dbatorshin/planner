@@ -87,26 +87,26 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="sticky top-0 z-40 w-full backdrop-blur-2xl transition-all duration-300" style={{ background: 'var(--topbar-bg)' }}>
       <div className="max-w-3xl mx-auto px-3 sm:px-4 h-16 flex items-center justify-between gap-2.5">
         {/* Left: Header Icon & Time Pill */}
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
           {/* Static circular icon (default cursor, zero hover scale) */}
           <div
-            className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-sm cursor-default select-none"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shrink-0 shadow-sm cursor-default select-none"
             style={{
               background: 'var(--theme-primary)',
               color: 'var(--btn-pill-text)',
             }}
           >
-            <Hourglass className="w-5 h-5 stroke-[2.5]" />
+            <Hourglass className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
           </div>
 
           {/* Text Info - Default Cursor */}
           <div className="min-w-0 cursor-default select-none">
             <div className="flex items-center gap-1.5">
-              <h1 className="text-base sm:text-lg font-black tracking-tight leading-none truncate">
+              <h1 className="text-base sm:text-lg font-black tracking-tight leading-none shrink-0">
                 Планер
               </h1>
               <span
-                className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 transition-colors"
+                className="hidden sm:inline-flex text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 transition-colors"
                 style={{
                   background: 'var(--theme-accent-soft)',
                   color: 'var(--theme-primary)',
@@ -119,21 +119,24 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="font-mono font-extrabold text-xs" style={{ color: 'var(--theme-primary)' }}>
                 {dayCountdown}
               </span>
-              <span>•</span>
-              <span className="capitalize">{format(selectedDate, 'd MMM', { locale: ru })}</span>
+              <span className="sm:hidden text-[10px] font-semibold opacity-85">
+                до конца дня
+              </span>
+              <span className="hidden sm:inline">•</span>
+              <span className="capitalize hidden sm:inline">{format(selectedDate, 'd MMM', { locale: ru })}</span>
             </p>
           </div>
         </div>
 
         {/* Right: Actions */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {installPrompt && (
             <button
               onClick={() => {
                 haptic.medium();
                 onInstall();
               }}
-              className="ref-btn-pill px-3 py-1.5 text-xs flex items-center gap-1 cursor-pointer shrink-0"
+              className="ref-btn-pill px-2.5 sm:px-3 py-1.5 text-xs flex items-center gap-1 cursor-pointer shrink-0"
               title="Установить приложение"
             >
               <Download className="w-3.5 h-3.5" />
@@ -145,7 +148,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={handleCycleTheme}
-            className="ref-btn-circle w-9 h-9 sm:w-10 sm:h-10 cursor-pointer"
+            className="ref-btn-circle w-8 h-8 sm:w-10 sm:h-10 cursor-pointer"
             title={themeLabel}
           >
             {themeIcon}
@@ -156,7 +159,7 @@ export const Header: React.FC<HeaderProps> = ({
             type="button"
             onClick={handleCloudClick}
             disabled={isSyncing}
-            className="ref-btn-circle w-9 h-9 sm:w-10 sm:h-10 relative cursor-pointer"
+            className="ref-btn-circle w-8 h-8 sm:w-10 sm:h-10 relative cursor-pointer"
             title={
               isSyncing
                 ? 'Синхронизация с облаком...'
@@ -166,19 +169,19 @@ export const Header: React.FC<HeaderProps> = ({
             }
           >
             {isSyncing ? (
-              <RefreshCw className="w-4 h-4 animate-spin" style={{ color: 'var(--theme-primary)' }} />
+              <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" style={{ color: 'var(--theme-primary)' }} />
             ) : isCloudConfigured ? (
               <div className="relative flex items-center justify-center">
-                <Cloud className="w-4 h-4" style={{ color: 'var(--theme-primary)' }} />
+                <Cloud className="w-3.5 h-3.5 sm:w-4 sm:h-4" style={{ color: 'var(--theme-primary)' }} />
                 <span
-                  className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full"
+                  className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full"
                   style={{ background: 'var(--theme-primary)' }}
                 />
               </div>
             ) : (
               <div className="relative flex items-center justify-center opacity-60">
-                <Cloud className="w-4 h-4" style={{ color: 'var(--glass-text-sub)' }} />
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-slate-400" />
+                <Cloud className="w-3.5 h-3.5 sm:w-4 sm:h-4" style={{ color: 'var(--glass-text-sub)' }} />
+                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-slate-400" />
               </div>
             )}
           </button>
@@ -190,7 +193,7 @@ export const Header: React.FC<HeaderProps> = ({
               haptic.light();
               onOpenAccount();
             }}
-            className="ref-btn-circle w-9 h-9 sm:w-10 sm:h-10 cursor-pointer hidden sm:flex"
+            className="ref-btn-circle w-8 h-8 sm:w-10 sm:h-10 cursor-pointer hidden sm:flex"
             title="Аккаунт и синхронизация"
           >
             <User className="w-4 h-4" />
@@ -202,10 +205,10 @@ export const Header: React.FC<HeaderProps> = ({
               haptic.light();
               onOpenSettings();
             }}
-            className="ref-btn-circle w-9 h-9 sm:w-10 sm:h-10 cursor-pointer"
+            className="ref-btn-circle w-8 h-8 sm:w-10 sm:h-10 cursor-pointer"
             title="Настройки, темы и звук"
           >
-            <Settings className="w-4 h-4" />
+            <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
 
           {/* Flat Pill Add Task Button (Reference Styled) */}
@@ -214,10 +217,10 @@ export const Header: React.FC<HeaderProps> = ({
               haptic.medium();
               onOpenNewTask();
             }}
-            className="ref-btn-pill px-3.5 sm:px-4 py-2 text-xs sm:text-sm flex items-center gap-1.5 cursor-pointer shrink-0"
+            className="ref-btn-pill px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm flex items-center gap-1 sm:gap-1.5 cursor-pointer shrink-0"
             title="Создать новую задачу"
           >
-            <Plus className="w-4 h-4 stroke-[3]" />
+            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[3]" />
             <span>Добавить</span>
           </button>
         </div>
