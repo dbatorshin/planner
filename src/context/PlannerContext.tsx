@@ -206,52 +206,12 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => clearTimeout(timeout);
   }, [appData]);
 
-  // Cloud Sync: Pull remote changes on visibility change (smartphone screen unlock / browser focus)
-  useEffect(() => {
-    if (!appData?.account?.cloudSyncEnabled || !appData?.account?.supabaseUrl || !appData?.account?.supabaseAnonKey) {
-      return;
-    }
-
-    const pullRemote = async () => {
-      if (isUserMutationRef.current || isSyncing) return;
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-
-      try {
-        const currentData = latestAppDataRef.current;
-        const res = await fetchFromCloud(
-          currentData.account.supabaseUrl,
-          currentData.account.supabaseAnonKey,
-          currentData.account.email
-        );
-        if (res.success && res.data) {
-          setAppData(res.data);
-          setSyncStatus('synced');
-        }
-      } catch {}
-    };
-
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        pullRemote();
-      }
-    };
-
-    window.addEventListener('focus', pullRemote);
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    // Periodic pull every 12 seconds when online
-    const interval = setInterval(pullRemote, 12000);
-
-    return () => {
-      window.removeEventListener('focus', pullRemote);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      clearInterval(interval);
-    };
-  }, [appData?.account?.cloudSyncEnabled, appData?.account?.supabaseUrl, appData?.account?.supabaseAnonKey, appData?.account?.email, isSyncing]);
-
-  // Manual Trigger Sync
+  // Manual / Auto Trigger Sync
   const triggerSync = useCallback(
     async (overrideUrl?: string, overrideKey?: string): Promise<{ success: boolean; message?: string }> => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        return { success: false, message: 'Офлайн режим: изменения сохранены локально.' };
+      }
       setIsSyncing(true);
       setSyncStatus('syncing');
       try {
@@ -280,6 +240,61 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     },
     [showToast]
   );
+
+  // Cloud Sync: Pull remote changes on visibility change (smartphone screen unlock / browser focus / online)
+  useEffect(() => {
+    if (!appData?.account?.cloudSyncEnabled || !appData?.account?.supabaseUrl || !appData?.account?.supabaseAnonKey) {
+      return;
+    }
+
+    const pullRemote = async () => {
+      if (isSyncing) return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+
+      // If user made offline changes, push them to cloud with merge!
+      if (isUserMutationRef.current) {
+        triggerSync();
+        return;
+      }
+
+      try {
+        const currentData = latestAppDataRef.current;
+        const res = await fetchFromCloud(
+          currentData.account.supabaseUrl,
+          currentData.account.supabaseAnonKey,
+          currentData.account.email
+        );
+        if (res.success && res.data) {
+          setAppData(res.data);
+          setSyncStatus('synced');
+        }
+      } catch {}
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        pullRemote();
+      }
+    };
+
+    const handleOnline = () => {
+      pullRemote();
+    };
+
+    window.addEventListener('focus', pullRemote);
+    window.addEventListener('online', handleOnline);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // Periodic pull every 12 seconds when online
+    const interval = setInterval(pullRemote, 12000);
+
+    return () => {
+      window.removeEventListener('focus', pullRemote);
+      window.removeEventListener('online', handleOnline);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearInterval(interval);
+    };
+  }, [appData?.account?.cloudSyncEnabled, appData?.account?.supabaseUrl, appData?.account?.supabaseAnonKey, appData?.account?.email, isSyncing, triggerSync]);
 
   // Update Account
   const updateAccount = useCallback((updates: Partial<UserAccount>) => {
