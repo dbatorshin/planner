@@ -9,9 +9,12 @@ import {
   Smartphone,
   ShieldCheck,
   CheckCircle2,
+  Lock,
+  KeyRound,
 } from 'lucide-react';
 import { usePlanner } from '../context/PlannerContext';
 import { haptic } from '../utils/haptics';
+import { isPinConfigured, removeAppPin, lockApp } from './PinLock';
 
 interface AccountModalProps {
   isOpen: boolean;
@@ -33,6 +36,13 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
   const [syncEnabled, setSyncEnabled] = useState(() => appData?.account?.cloudSyncEnabled || false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [hasPinState, setHasPinState] = useState(() => isPinConfigured());
+
+  useEffect(() => {
+    if (isOpen) {
+      setHasPinState(isPinConfigured());
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (appData?.account) {
@@ -368,6 +378,65 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
                 </p>
               </div>
             )}
+          </div>
+
+          {/* Section: Security & PIN Code */}
+          <div
+            className="rounded-2xl p-3.5 space-y-2.5"
+            style={{
+              background: 'var(--sheet-card-bg)',
+              boxShadow: 'var(--sheet-card-shadow)',
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <Lock className="w-4 h-4" style={{ color: 'var(--theme-primary)' }} />
+              <h4 className="text-xs font-black uppercase tracking-wider" style={{ color: 'var(--sheet-title)' }}>
+                Безопасность и PIN-код
+              </h4>
+            </div>
+
+            <p className="text-xs font-semibold leading-relaxed" style={{ color: 'var(--sheet-sub)' }}>
+              {hasPinState
+                ? 'PIN-код активен. Доступ к вашему планеру надёжно защищён 4-значным паролем.'
+                : 'PIN-код не установлен. При следующем входе приложение предложит задать 4-значный код.'}
+            </p>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  haptic.medium();
+                  lockApp();
+                  window.location.reload();
+                }}
+                className="ref-btn-soft px-3.5 py-2 text-xs font-black cursor-pointer flex items-center gap-1.5"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Заблокировать сейчас</span>
+              </button>
+
+              {hasPinState && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('Сбросить PIN-код? После этого вход будет свободным до создания нового кода.')) {
+                      removeAppPin();
+                      setHasPinState(false);
+                      haptic.success();
+                      showToast('PIN-код сброшен');
+                    }
+                  }}
+                  className="px-3.5 py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 hover:opacity-80"
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.12)',
+                    color: '#ef4444',
+                  }}
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>Сбросить PIN</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Action Buttons */}

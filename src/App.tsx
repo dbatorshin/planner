@@ -9,6 +9,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { AccountModal } from './components/AccountModal';
 import { AlarmModal } from './components/AlarmModal';
 import { Toast } from './components/Toast';
+import { PinLock, isAppUnlocked } from './components/PinLock';
 import { haptic } from './utils/haptics';
 
 const MainContent: React.FC<{
@@ -17,10 +18,15 @@ const MainContent: React.FC<{
 }> = ({ installPrompt, onInstall }) => {
   const { viewMode } = usePlanner();
 
+  const [isLocked, setIsLocked] = useState(() => !isAppUnlocked());
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState<EffectiveTask | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
+
+  if (isLocked) {
+    return <PinLock onUnlock={() => setIsLocked(false)} />;
+  }
 
   const handleOpenNewTask = () => {
     haptic.medium();
