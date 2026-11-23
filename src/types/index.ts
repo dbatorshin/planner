@@ -36,6 +36,7 @@ export interface DayLog {
   completedAt: Record<string, string>; // taskId -> ISO timestamp
   overrides: Record<string, DayTaskOverride>; // taskId -> { startTime, endTime }
   progress?: Record<string, TaskProgressState>; // taskId -> live task progress
+  excludedTaskIds?: string[]; // task IDs skipped or excluded for this day
 }
 
 export interface UserAccount {

@@ -111,8 +111,14 @@ export function mergeAppData(remote: AppData, local: AppData): AppData {
       ...(lLog.completedTaskIds || []),
     ]);
 
+    const allExcluded = new Set([
+      ...(rLog.excludedTaskIds || []),
+      ...(lLog.excludedTaskIds || []),
+    ]);
+
     mergedHistory[dateStr] = {
       completedTaskIds: Array.from(allCompleted).filter((id) => !allDeletedTaskIds.has(id)),
+      excludedTaskIds: Array.from(allExcluded).filter((id) => !allDeletedTaskIds.has(id)),
       completedAt: {
         ...(rLog.completedAt || {}),
         ...(lLog.completedAt || {}),

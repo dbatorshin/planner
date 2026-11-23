@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Trash2, Clock, Bell, Check } from 'lucide-react';
+import { X, Trash2, Clock, Bell, Check, CalendarX } from 'lucide-react';
 import type { DayOfWeek } from '../types';
 import { usePlanner, type EffectiveTask } from '../context/PlannerContext';
 import { haptic } from '../utils/haptics';
@@ -46,6 +46,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     createTask,
     updateTask,
     deleteTaskPermanently,
+    skipTaskForDay,
   } = usePlanner();
 
   const [title, setTitle] = useState('');
@@ -506,19 +507,33 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           </div>
 
           {/* Bottom Action Buttons */}
-          <div className="flex items-center justify-between pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-3">
             {taskToEdit ? (
               confirmDelete ? (
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      skipTaskForDay(taskToEdit.id);
+                      onClose();
+                    }}
+                    className="ref-btn-soft px-3 py-2 text-xs font-bold flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    title="Убрать только из расписания на этот день"
+                  >
+                    <CalendarX className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Пропустить сегодня</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
                       deleteTaskPermanently(taskToEdit.id);
                       onClose();
                     }}
-                    className="px-3 py-2 text-xs font-black text-white bg-rose-600 rounded-xl hover:bg-rose-700 shadow-sm cursor-pointer"
+                    className="px-3 py-2 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 rounded-xl flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
+                    title="Удалить задачу навсегда из всех дней"
                   >
-                    Да, удалить
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Удалить навсегда</span>
                   </button>
                   <button
                     type="button"

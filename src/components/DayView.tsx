@@ -9,6 +9,7 @@ import {
   RotateCcw,
   Plus,
   Trash2,
+  CalendarX,
 } from 'lucide-react';
 import { format, addDays, subDays } from 'date-fns';
 import { ru } from 'date-fns/locale';
@@ -30,6 +31,7 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
     activeTasks,
     completedTasks,
     allScheduledTasks,
+    skippedTasks,
     currentRunningTask,
     dayCompletionRate,
     totalScheduledMinutes,
@@ -41,10 +43,12 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
     completeTask,
     restoreTask,
     deleteTaskPermanently,
+    skipTaskForDay,
+    restoreSkippedTask,
   } = usePlanner();
 
   const [isCompletedOpen, setIsCompletedOpen] = useState(false);
-  const [taskToDeleteId, setTaskToDeleteId] = useState<string | null>(null);
+  const [taskToRemove, setTaskToRemove] = useState<EffectiveTask | null>(null);
 
   const handlePrevDay = () => {
     haptic.light();
@@ -54,13 +58,6 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
   const handleNextDay = () => {
     haptic.light();
     setSelectedDate(addDays(selectedDate, 1));
-  };
-
-  const handleDeleteClick = (e: React.MouseEvent, taskId: string) => {
-    e.stopPropagation();
-    haptic.medium();
-    deleteTaskPermanently(taskId);
-    setTaskToDeleteId(null);
   };
 
   // Date formatting
@@ -323,7 +320,6 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
               const isRunning = task.status === 'running';
               const isPaused = task.status === 'paused';
               const isIdle = task.status === 'idle';
-              const isConfirmingDelete = taskToDeleteId === task.id;
 
               return (
                 <div
@@ -373,46 +369,23 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
                       </div>
                     </div>
 
-                    {/* Right Header: Status / Delete */}
+                    {/* Right Header: Delete or Skip */}
                     <div
                       className="flex items-center gap-2 shrink-0"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      {/* Delete button */}
-                      {isConfirmingDelete ? (
-                        <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'var(--theme-accent-soft)' }}>
-                          <button
-                            type="button"
-                            onClick={(e) => handleDeleteClick(e, task.id)}
-                            className="px-2.5 py-1 text-[11px] font-black text-white bg-rose-600 rounded-lg hover:bg-rose-700"
-                          >
-                            Удалить
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setTaskToDeleteId(null);
-                            }}
-                            className="px-1.5 py-1 text-[11px] font-bold"
-                            style={{ color: 'var(--sheet-sub)' }}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setTaskToDeleteId(task.id);
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-rose-500 rounded-xl transition cursor-pointer"
-                          title="Удалить задачу"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          haptic.light();
+                          setTaskToRemove(task);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-rose-500 rounded-xl transition cursor-pointer"
+                        title="Удалить или пропустить задачу"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
 
@@ -607,9 +580,13 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
 
                       <button
                         type="button"
-                        onClick={(e) => handleDeleteClick(e, t.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          haptic.light();
+                          setTaskToRemove(t);
+                        }}
                         className="p-1.5 text-slate-400 hover:text-rose-500 rounded-xl transition cursor-pointer"
-                        title="Удалить задачу"
+                        title="Удалить или пропустить задачу"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -618,6 +595,134 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Skipped Tasks for Today */}
+        {skippedTasks.length > 0 && (
+          <div className="pt-2">
+            <div
+              className="p-3.5 rounded-2xl space-y-2.5 transition-all"
+              style={{
+                background: 'var(--sheet-card-bg)',
+                boxShadow: 'var(--sheet-card-shadow)',
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wide flex items-center gap-1.5" style={{ color: 'var(--sheet-title)' }}>
+                  <CalendarX className="w-3.5 h-3.5 text-amber-500" />
+                  Пропущенные сегодня • {skippedTasks.length}
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                {skippedTasks.map((t) => (
+                  <div
+                    key={t.id}
+                    className="flex items-center justify-between p-2.5 rounded-xl gap-2"
+                    style={{ background: 'var(--sheet-bg)' }}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: t.color }}
+                      />
+                      <span className="text-xs font-bold truncate" style={{ color: 'var(--sheet-title)' }}>
+                        {t.title}
+                      </span>
+                      <span className="text-[10px] font-mono shrink-0" style={{ color: 'var(--sheet-sub)' }}>
+                        {t.effectiveStartTime}–{t.effectiveEndTime}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => restoreSkippedTask(t.id)}
+                      className="ref-btn-soft px-3 py-1 text-[11px] font-bold flex items-center gap-1 cursor-pointer shrink-0 active:scale-95"
+                      title="Вернуть задачу в расписание"
+                    >
+                      <RotateCcw className="w-3 h-3 text-emerald-500" />
+                      <span>Вернуть</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete or Skip Confirmation Modal */}
+        {taskToRemove && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200"
+            onClick={() => setTaskToRemove(null)}
+          >
+            <div
+              className="modal-container w-full max-w-sm p-5 space-y-4 shadow-2xl"
+              style={{ background: 'var(--sheet-bg)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
+                  style={{
+                    background: 'var(--theme-accent-soft)',
+                    color: 'var(--theme-primary)',
+                  }}
+                >
+                  <Trash2 className="w-5 h-5 text-rose-500" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-black tracking-tight" style={{ color: 'var(--sheet-title)' }}>
+                    Удаление задачи
+                  </h3>
+                  <p className="text-xs font-bold truncate" style={{ color: 'var(--sheet-sub)' }}>
+                    {taskToRemove.title}
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-xs font-semibold leading-relaxed" style={{ color: 'var(--sheet-sub)' }}>
+                Выберите действие для этой задачи:
+              </p>
+
+              <div className="space-y-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    skipTaskForDay(taskToRemove.id);
+                    setTaskToRemove(null);
+                  }}
+                  className="ref-btn-soft w-full py-2.5 px-4 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                >
+                  <CalendarX className="w-4 h-4 text-amber-500" />
+                  <span>Пропустить только сегодня</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    deleteTaskPermanently(taskToRemove.id);
+                    setTaskToRemove(null);
+                  }}
+                  className="w-full py-2.5 px-4 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 rounded-full flex items-center justify-center gap-2 cursor-pointer shadow-md active:scale-95 transition"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Удалить навсегда из всех дней</span>
+                </button>
+              </div>
+
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setTaskToRemove(null)}
+                  className="w-full py-2 text-xs font-bold text-center cursor-pointer"
+                  style={{ color: 'var(--sheet-sub)' }}
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

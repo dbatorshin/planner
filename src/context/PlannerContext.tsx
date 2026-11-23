@@ -71,6 +71,9 @@ interface PlannerContextType {
     autoShiftSubsequentToday?: boolean
   ) => void;
   deleteTaskPermanently: (taskId: string) => void;
+  skipTaskForDay: (taskId: string) => void;
+  restoreSkippedTask: (taskId: string) => void;
+  skippedTasks: EffectiveTask[];
   // Auto-sync start, pause, resume, reset & complete
   startTask: (taskId: string) => void;
   pauseTask: (taskId: string) => void;
@@ -456,7 +459,8 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Compute all scheduled tasks with overrides and live progress (TICK DEPENDENCY IS INCLUDED!)
   const allScheduledTasks: EffectiveTask[] = useMemo(() => {
     const matchingTemplates = appData.tasks.filter((t) =>
-      t.daysOfWeek.includes(dayOfWeek)
+      t.daysOfWeek.includes(dayOfWeek) &&
+      !(currentDayLog.excludedTaskIds || []).includes(t.id)
     );
 
     const now = clockTick;
@@ -520,6 +524,38 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       (a, b) => timeToMinutes(a.effectiveStartTime) - timeToMinutes(b.effectiveStartTime)
     );
   }, [appData.tasks, dayOfWeek, currentDayLog, clockTick]);
+
+  // Tasks skipped/excluded for current selected day
+  const skippedTasks: EffectiveTask[] = useMemo(() => {
+    const skippedTemplates = appData.tasks.filter(
+      (t) =>
+        t.daysOfWeek.includes(dayOfWeek) &&
+        Boolean(currentDayLog.excludedTaskIds?.includes(t.id))
+    );
+
+    return skippedTemplates.map((t) => {
+      const override = currentDayLog.overrides?.[t.id];
+      const effectiveStartTime = override?.startTime || t.startTime;
+      const effectiveEndTime = override?.endTime || t.endTime;
+      const effectiveDurationMinutes = getDurationMinutes(effectiveStartTime, effectiveEndTime);
+      const basePlannedDurationMinutes = getDurationMinutes(t.startTime, t.endTime);
+
+      return {
+        ...t,
+        effectiveStartTime,
+        effectiveEndTime,
+        effectiveDurationMinutes,
+        basePlannedDurationMinutes,
+        isOverridden: !!override,
+        isCompleted: false,
+        status: 'idle' as const,
+        workedSeconds: 0,
+        remainingSeconds: basePlannedDurationMinutes * 60,
+        pausedElapsedSeconds: 0,
+        plannedDurationSeconds: basePlannedDurationMinutes * 60,
+      };
+    });
+  }, [appData.tasks, dayOfWeek, currentDayLog]);
 
   const activeTasks = useMemo(
     () => allScheduledTasks.filter((t) => !t.isCompleted),
@@ -639,25 +675,29 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const oldTask = prev.tasks.find((t) => t.id === taskId);
         if (!oldTask) return prev;
 
-        // Update task definition (title, category, color, days, time, alarm)
-        const updatedTasks = prev.tasks.map((t) => {
-          if (t.id === taskId) {
-            return { ...t, ...data };
-          }
-          return t;
-        });
-
         const newHistory = { ...prev.history };
         const dayLog = newHistory[selectedDateStr] || {
           completedTaskIds: [],
           completedAt: {},
           overrides: {},
           progress: {},
+          excludedTaskIds: [],
         };
 
         if (!applyToFutureDays) {
-          const newStart = data.startTime || oldTask.startTime;
-          const newEnd = data.endTime || oldTask.endTime;
+          // Scenario 1: Apply time changes only to current day
+          // Global fields (title, category, color, daysOfWeek, alarmEnabled) are updated in template,
+          // but template's base startTime and endTime are preserved!
+          const { startTime: _ignStart, endTime: _ignEnd, ...globalFields } = data;
+          const updatedTasks = prev.tasks.map((t) => {
+            if (t.id === taskId) {
+              return { ...t, ...globalFields };
+            }
+            return t;
+          });
+
+          const newStart = data.startTime || dayLog.overrides?.[taskId]?.startTime || oldTask.startTime;
+          const newEnd = data.endTime || dayLog.overrides?.[taskId]?.endTime || oldTask.endTime;
 
           const oldStartMinutes = timeToMinutes(
             dayLog.overrides?.[taskId]?.startTime || oldTask.startTime
@@ -672,7 +712,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
           if (autoShiftSubsequentToday && deltaMinutes !== 0) {
             const scheduledToday = updatedTasks
-              .filter((t) => t.daysOfWeek.includes(dayOfWeek) && t.id !== taskId)
+              .filter((t) => t.daysOfWeek.includes(dayOfWeek) && t.id !== taskId && !(dayLog.excludedTaskIds || []).includes(t.id))
               .map((t) => {
                 const ov = newOverrides[t.id];
                 return {
@@ -696,13 +736,20 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
             overrides: newOverrides,
           };
 
-          // CRITICAL FIX: ALWAYS return tasks: updatedTasks so title and edits are permanently saved!
           return {
             ...prev,
             tasks: updatedTasks,
             history: newHistory,
           };
         } else {
+          // Scenario 2: Apply to all subsequent days (update base template including startTime and endTime)
+          const updatedTasks = prev.tasks.map((t) => {
+            if (t.id === taskId) {
+              return { ...t, ...data };
+            }
+            return t;
+          });
+
           const newOverrides = { ...(dayLog.overrides || {}) };
           delete newOverrides[taskId];
 
@@ -720,7 +767,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
 
       haptic.medium();
-      showToast('Изменения задачи сохранены!');
+      showToast('Изменения задачи сохранены');
     },
     [selectedDateStr, dayOfWeek, showToast]
   );
@@ -1119,19 +1166,22 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           if (
             log.overrides?.[taskId] ||
             log.completedTaskIds?.includes(taskId) ||
-            log.progress?.[taskId]
+            log.progress?.[taskId] ||
+            log.excludedTaskIds?.includes(taskId)
           ) {
             const newOverrides = { ...(log.overrides || {}) };
             delete newOverrides[taskId];
             const newCompleted = (log.completedTaskIds || []).filter((id) => id !== taskId);
             const newProgress = { ...(log.progress || {}) };
             delete newProgress[taskId];
+            const newExcluded = (log.excludedTaskIds || []).filter((id) => id !== taskId);
 
             newHistory[date] = {
               ...log,
               overrides: newOverrides,
               completedTaskIds: newCompleted,
               progress: newProgress,
+              excludedTaskIds: newExcluded,
             };
           }
         }
@@ -1147,6 +1197,80 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       showToast('Задача полностью удалена');
     },
     [showToast]
+  );
+
+  // SKIP TASK FOR CURRENT DAY ONLY
+  const skipTaskForDay = useCallback(
+    (taskId: string) => {
+      haptic.medium();
+      isUserMutationRef.current = true;
+      setAppData((prev) => {
+        const newHistory = { ...prev.history };
+        const dayLog = newHistory[selectedDateStr] || {
+          completedTaskIds: [],
+          completedAt: {},
+          overrides: {},
+          progress: {},
+          excludedTaskIds: [],
+        };
+
+        const currentExcluded = new Set(dayLog.excludedTaskIds || []);
+        currentExcluded.add(taskId);
+
+        // Reset progress if it was running or paused
+        const newProgress = { ...(dayLog.progress || {}) };
+        if (newProgress[taskId]) {
+          newProgress[taskId] = {
+            ...newProgress[taskId],
+            status: 'idle',
+            lastStartedTimestamp: null,
+            pausedTimestamp: null,
+          };
+        }
+
+        newHistory[selectedDateStr] = {
+          ...dayLog,
+          progress: newProgress,
+          excludedTaskIds: Array.from(currentExcluded),
+        };
+
+        return {
+          ...prev,
+          history: newHistory,
+        };
+      });
+
+      showToast('Задача пропущена на этот день');
+    },
+    [selectedDateStr, showToast]
+  );
+
+  // RESTORE SKIPPED TASK FOR CURRENT DAY
+  const restoreSkippedTask = useCallback(
+    (taskId: string) => {
+      haptic.success();
+      isUserMutationRef.current = true;
+      setAppData((prev) => {
+        const newHistory = { ...prev.history };
+        const dayLog = newHistory[selectedDateStr];
+        if (!dayLog || !dayLog.excludedTaskIds?.includes(taskId)) return prev;
+
+        const updatedExcluded = (dayLog.excludedTaskIds || []).filter((id) => id !== taskId);
+
+        newHistory[selectedDateStr] = {
+          ...dayLog,
+          excludedTaskIds: updatedExcluded,
+        };
+
+        return {
+          ...prev,
+          history: newHistory,
+        };
+      });
+
+      showToast('Задача возвращена в расписание');
+    },
+    [selectedDateStr, showToast]
   );
 
   const reorderTasks = useCallback((newTasks: TaskTemplate[]) => {
@@ -1183,6 +1307,9 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         createTask,
         updateTask,
         deleteTaskPermanently,
+        skipTaskForDay,
+        restoreSkippedTask,
+        skippedTasks,
         startTask,
         pauseTask,
         resumeTask,
