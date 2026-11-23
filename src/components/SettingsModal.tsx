@@ -31,7 +31,7 @@ interface SettingsModalProps {
 const THEMES: { id: ThemeId; title: string; subtitle: string; icon: React.ReactNode; gradient: string }[] = [
   {
     id: 'midnight',
-    title: 'Полночь (Референс)',
+    title: 'Полночь',
     subtitle: 'Глубокий ночной сапфир, фарфор и небесно-голубой',
     icon: <Moon className="w-4 h-4 text-sky-400" />,
     gradient: 'linear-gradient(135deg, #0d2238 0%, #1e456a 100%)',
@@ -285,7 +285,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="space-y-2">
             <span className="text-xs font-black uppercase tracking-wide flex items-center gap-1.5" style={{ color: 'var(--sheet-title)' }}>
               <Music className="w-3.5 h-3.5" style={{ color: 'var(--theme-primary)' }} />
-              Мелодия будильника (Натуральный стерео-звук)
+              Мелодия будильника • Натуральный стерео-звук
             </span>
 
             <div className="flex items-center gap-2" ref={dropdownRef}>
@@ -423,7 +423,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="pt-2 flex items-center justify-between">
                 <div>
                   <span className="text-xs font-black block" style={{ color: 'var(--sheet-title)' }}>
-                    Системные уведомления (OS)
+                    Системные push-уведомления
                   </span>
                   <span className="text-[11px] font-semibold block" style={{ color: 'var(--sheet-sub)' }}>
                     Статус: {notificationStatus === 'granted' ? 'Разрешено' : 'Не включено'}

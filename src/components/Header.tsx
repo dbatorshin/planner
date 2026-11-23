@@ -78,7 +78,7 @@ export const Header: React.FC<HeaderProps> = ({
   }[currentTheme];
 
   const themeLabel = {
-    midnight: 'Тема: Полночь (Референс)',
+    midnight: 'Тема: Полночь',
     gold: 'Тема: Золотой рассвет',
     emerald: 'Тема: Изумрудный лес',
   }[currentTheme];
@@ -164,7 +164,7 @@ export const Header: React.FC<HeaderProps> = ({
               isSyncing
                 ? 'Синхронизация с облаком...'
                 : isCloudConfigured
-                ? 'Облако синхронизировано (нажмите для проверки)'
+                ? 'Облако синхронизировано — нажмите для проверки'
                 : 'Облако не настроено — нажмите для подключения'
             }
           >

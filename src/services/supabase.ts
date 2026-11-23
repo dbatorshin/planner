@@ -235,7 +235,7 @@ export async function syncWithCloud(
   if (!client) {
     return {
       success: false,
-      message: 'Supabase не настроен (укажите URL и Anon Key в настройках аккаунта)',
+      message: 'Supabase не настроен: укажите URL и Anon Key в настройках аккаунта',
     };
   }
 
