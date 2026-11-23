@@ -29,6 +29,7 @@ export interface TaskProgressState {
   lastStartedTimestamp: number | null; // epoch ms when current segment started
   pausedTimestamp: number | null; // epoch ms when pause started
   plannedDurationSeconds: number; // total planned seconds (e.g. 14400 for 4 hours)
+  updatedAt?: number; // epoch ms when state was last updated (start, pause, resume, reset, complete, restore)
 }
 
 export interface DayLog {

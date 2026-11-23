@@ -472,7 +472,8 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const enriched = matchingTemplates.map((t) => {
       const override = currentDayLog.overrides?.[t.id];
       const prog = currentDayLog.progress?.[t.id];
-      const isCompleted = currentDayLog.completedTaskIds?.includes(t.id) || false;
+      const isCompleted =
+        Boolean(currentDayLog.completedTaskIds?.includes(t.id)) && prog?.status !== 'idle';
       const completedAt = currentDayLog.completedAt?.[t.id];
 
       const effectiveStartTime = override?.startTime || t.startTime;
@@ -491,22 +492,28 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const basePlannedDurationMinutes = Math.round(plannedDurationSeconds / 60);
 
       let status: 'idle' | 'running' | 'paused' | 'completed' = 'idle';
-      let workedSeconds = prog?.workedSeconds || 0;
+      let workedSeconds = 0;
       let pausedElapsedSeconds = 0;
 
-      if (isCompleted) {
+      if (isCompleted || prog?.status === 'completed') {
         status = 'completed';
+        workedSeconds = plannedDurationSeconds;
       } else if (prog?.status === 'running') {
         status = 'running';
+        workedSeconds = prog.workedSeconds || 0;
         if (prog.lastStartedTimestamp) {
           const currentStretch = Math.max(0, (now - prog.lastStartedTimestamp) / 1000);
           workedSeconds += currentStretch;
         }
       } else if (prog?.status === 'paused') {
         status = 'paused';
+        workedSeconds = prog.workedSeconds || 0;
         if (prog.pausedTimestamp) {
           pausedElapsedSeconds = Math.max(0, (now - prog.pausedTimestamp) / 1000);
         }
+      } else {
+        status = 'idle';
+        workedSeconds = 0;
       }
 
       // If viewing today, synchronize workedSeconds so it cannot exceed the real-world
@@ -814,6 +821,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 lastStartedTimestamp: newLastStarted,
                 pausedTimestamp: newPaused,
                 plannedDurationSeconds: newDurationSec,
+                updatedAt: Date.now(),
               };
             }
           }
@@ -881,6 +889,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 lastStartedTimestamp: newLastStarted,
                 pausedTimestamp: newPaused,
                 plannedDurationSeconds: newDurationSec,
+                updatedAt: Date.now(),
               };
             }
           }
@@ -1004,6 +1013,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
               workedSeconds: otherProg.workedSeconds + currentStretch,
               lastStartedTimestamp: null,
               pausedTimestamp: now,
+              updatedAt: now,
             };
           }
         }
@@ -1017,6 +1027,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           plannedDurationSeconds: existingProgress?.plannedDurationSeconds
             ? Math.min(existingProgress.plannedDurationSeconds, scheduledDurationSec)
             : scheduledDurationSec,
+          updatedAt: now,
         };
 
         newHistory[selectedDateStr] = {
@@ -1065,6 +1076,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
             workedSeconds: prog.workedSeconds + currentStretch,
             lastStartedTimestamp: null,
             pausedTimestamp: now,
+            updatedAt: now,
           },
         };
 
@@ -1164,6 +1176,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
               workedSeconds: otherProg.workedSeconds + currentStretch,
               lastStartedTimestamp: null,
               pausedTimestamp: now,
+              updatedAt: now,
             };
           }
         }
@@ -1173,6 +1186,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           status: 'running',
           lastStartedTimestamp: now,
           pausedTimestamp: null,
+          updatedAt: now,
         };
 
         newHistory[selectedDateStr] = {
@@ -1207,13 +1221,10 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           progress: {},
         };
 
-        const newOverrides = { ...(dayLog.overrides || {}) };
-        delete newOverrides[taskId];
-
-        const basePlannedDurationMin = getDurationMinutes(
-          targetTask.startTime,
-          targetTask.endTime
-        );
+        const currentStart = dayLog.overrides?.[taskId]?.startTime || targetTask.startTime;
+        const currentEnd = dayLog.overrides?.[taskId]?.endTime || targetTask.endTime;
+        const plannedDurationMin = getDurationMinutes(currentStart, currentEnd);
+        const now = Date.now();
 
         const newProgress: Record<string, TaskProgressState> = {
           ...(dayLog.progress || {}),
@@ -1222,13 +1233,19 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
             workedSeconds: 0,
             lastStartedTimestamp: null,
             pausedTimestamp: null,
-            plannedDurationSeconds: basePlannedDurationMin * 60,
+            plannedDurationSeconds: plannedDurationMin * 60,
+            updatedAt: now,
           },
         };
 
+        const newCompleted = (dayLog.completedTaskIds || []).filter((id) => id !== taskId);
+        const newCompletedAt = { ...(dayLog.completedAt || {}) };
+        delete newCompletedAt[taskId];
+
         newHistory[selectedDateStr] = {
           ...dayLog,
-          overrides: newOverrides,
+          completedTaskIds: newCompleted,
+          completedAt: newCompletedAt,
           progress: newProgress,
         };
 
@@ -1274,6 +1291,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
             lastStartedTimestamp: null,
             pausedTimestamp: null,
             plannedDurationSeconds: prog?.plannedDurationSeconds || 0,
+            updatedAt: Date.now(),
           },
         };
 
@@ -1323,6 +1341,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           lastStartedTimestamp: null,
           pausedTimestamp: null,
           plannedDurationSeconds: basePlannedDurationMin * 60,
+          updatedAt: Date.now(),
         };
 
         newHistory[selectedDateStr] = {
@@ -1335,6 +1354,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return { ...prev, history: newHistory };
       });
 
+      firedAlarmsRef.current.delete(taskId);
       showToast('Задача возвращена в план');
     },
     [selectedDateStr, showToast]

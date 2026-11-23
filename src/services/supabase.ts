@@ -106,23 +106,10 @@ export function mergeAppData(remote: AppData, local: AppData): AppData {
       return;
     }
 
-    const allCompleted = new Set([
-      ...(rLog.completedTaskIds || []),
-      ...(lLog.completedTaskIds || []),
-    ]);
-
-    const allExcluded = new Set([
-      ...(rLog.excludedTaskIds || []),
-      ...(lLog.excludedTaskIds || []),
-    ]);
-
-    // ---- LWW (Last-Write-Wins) merge of task progress across devices ----
-    // For each task, pick whichever device has the MOST RECENT activity timestamp.
-    // This ensures that "pause on phone" is not overwritten by "still running on desktop".
-    const getProgressTimestamp = (p?: { status?: string; lastStartedTimestamp?: number | null; pausedTimestamp?: number | null }): number => {
+    // ---- LWW (Last-Write-Wins) merge of task progress and completion across devices ----
+    const getProgressTimestamp = (p?: import('../types').TaskProgressState): number => {
       if (!p) return 0;
-      if (p.status === 'paused' || p.status === 'completed') return p.pausedTimestamp || p.lastStartedTimestamp || 0;
-      return p.lastStartedTimestamp || 0;
+      return p.updatedAt || p.pausedTimestamp || p.lastStartedTimestamp || 0;
     };
 
     const allProgressTaskIds = new Set([
@@ -131,30 +118,62 @@ export function mergeAppData(remote: AppData, local: AppData): AppData {
     ]);
 
     const mergedProgress: Record<string, import('../types').TaskProgressState> = {};
+    const mergedCompletedTaskIdsSet = new Set<string>();
+
     allProgressTaskIds.forEach((taskId) => {
       const rProg = (rLog.progress || {})[taskId];
       const lProg = (lLog.progress || {})[taskId];
-      if (!rProg) { mergedProgress[taskId] = lProg; return; }
-      if (!lProg) { mergedProgress[taskId] = rProg; return; }
+      if (!rProg) {
+        mergedProgress[taskId] = lProg!;
+        if (lProg!.status === 'completed') mergedCompletedTaskIdsSet.add(taskId);
+        return;
+      }
+      if (!lProg) {
+        mergedProgress[taskId] = rProg;
+        if (rProg.status === 'completed') mergedCompletedTaskIdsSet.add(taskId);
+        return;
+      }
 
-      // If one side is 'completed', always prefer completed
-      if (lProg.status === 'completed') { mergedProgress[taskId] = lProg; return; }
-      if (rProg.status === 'completed') { mergedProgress[taskId] = rProg; return; }
-
-      // Otherwise pick the most recently changed record (Last-Write-Wins)
+      // Pick the most recently updated progress record (Last-Write-Wins)
       const tLocal = getProgressTimestamp(lProg);
       const tRemote = getProgressTimestamp(rProg);
-      mergedProgress[taskId] = tLocal >= tRemote ? lProg : rProg;
+      const winner = tLocal >= tRemote ? lProg : rProg;
+      mergedProgress[taskId] = winner;
+
+      if (winner.status === 'completed') {
+        mergedCompletedTaskIdsSet.add(taskId);
+      }
     });
-    // -----------------------------------------------------------------------
+
+    // Also include any tasks in completedTaskIds that have no explicit progress record
+    (lLog.completedTaskIds || []).forEach((id) => {
+      if (mergedProgress[id] && mergedProgress[id].status !== 'completed') return;
+      mergedCompletedTaskIdsSet.add(id);
+    });
+    (rLog.completedTaskIds || []).forEach((id) => {
+      if (mergedProgress[id] && mergedProgress[id].status !== 'completed') return;
+      mergedCompletedTaskIdsSet.add(id);
+    });
+
+    const mergedCompletedAt: Record<string, string> = {
+      ...(rLog.completedAt || {}),
+      ...(lLog.completedAt || {}),
+    };
+    for (const id in mergedCompletedAt) {
+      if (!mergedCompletedTaskIdsSet.has(id)) {
+        delete mergedCompletedAt[id];
+      }
+    }
+
+    const allExcluded = new Set([
+      ...(rLog.excludedTaskIds || []),
+      ...(lLog.excludedTaskIds || []),
+    ]);
 
     mergedHistory[dateStr] = {
-      completedTaskIds: Array.from(allCompleted).filter((id) => !allDeletedTaskIds.has(id)),
+      completedTaskIds: Array.from(mergedCompletedTaskIdsSet).filter((id) => !allDeletedTaskIds.has(id)),
       excludedTaskIds: Array.from(allExcluded).filter((id) => !allDeletedTaskIds.has(id)),
-      completedAt: {
-        ...(rLog.completedAt || {}),
-        ...(lLog.completedAt || {}),
-      },
+      completedAt: mergedCompletedAt,
       overrides: {
         ...(rLog.overrides || {}),
         ...(lLog.overrides || {}),
