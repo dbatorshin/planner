@@ -210,23 +210,23 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
             </div>
 
             {/* Action buttons on running task */}
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               {currentRunningTask.status === 'paused' ? (
                 <button
                   type="button"
                   onClick={() => resumeTask(currentRunningTask.id)}
-                  className="ref-btn-pill px-4 py-2 text-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  className="ref-btn-pill px-3.5 sm:px-4 py-1.5 sm:py-2 text-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
                 >
-                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <Play className="w-3.5 h-3.5 fill-current shrink-0" />
                   <span>Продолжить</span>
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => pauseTask(currentRunningTask.id)}
-                  className="ref-btn-soft px-3.5 py-2 text-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  className="ref-btn-soft px-3 sm:px-3.5 py-1.5 sm:py-2 text-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
                 >
-                  <Pause className="w-3.5 h-3.5 fill-current" />
+                  <Pause className="w-3.5 h-3.5 fill-current shrink-0" />
                   <span>Пауза</span>
                 </button>
               )}
@@ -234,7 +234,7 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
               <button
                 type="button"
                 onClick={() => completeTask(currentRunningTask.id)}
-                className="ref-btn-pill px-3 py-2 text-xs flex items-center justify-center cursor-pointer active:scale-95"
+                className="ref-btn-pill px-3 py-1.5 sm:py-2 text-xs flex items-center justify-center cursor-pointer active:scale-95"
                 title="Отметить выполненной"
               >
                 <Check className="w-4 h-4 stroke-[3]" />
@@ -352,9 +352,30 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
                           </h4>
                           {isRunning && (
                             <span
-                              className="w-2 h-2 rounded-full animate-pulse shrink-0"
-                              style={{ background: 'var(--theme-primary)' }}
-                            />
+                              className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                              style={{
+                                background: 'var(--theme-accent-soft)',
+                                color: 'var(--theme-primary)',
+                              }}
+                            >
+                              <span
+                                className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0"
+                                style={{ background: 'var(--theme-primary)' }}
+                              />
+                              В процессе
+                            </span>
+                          )}
+                          {isPaused && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                              style={{
+                                background: 'rgba(245, 158, 11, 0.15)',
+                                color: '#d97706',
+                              }}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-500" />
+                              На паузе
+                            </span>
                           )}
                         </div>
 
@@ -437,7 +458,7 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
 
                   {/* Bottom Row: Flat Action Pills (Reference "Pay Now" style) */}
                   <div
-                    className="flex items-center justify-between gap-2 pt-1"
+                    className="flex flex-wrap items-center justify-between gap-2 pt-1"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {/* Reset Button */}
@@ -446,24 +467,24 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
                         <button
                           type="button"
                           onClick={() => resetTask(task.id)}
-                          className="ref-btn-soft py-1.5 px-3 text-xs flex items-center gap-1 cursor-pointer active:scale-95"
+                          className="ref-btn-soft py-1.5 px-2.5 sm:px-3 text-xs flex items-center gap-1 cursor-pointer active:scale-95 shrink-0"
                           title="Сбросить таймер и начать заново"
                         >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>Сбросить</span>
+                          <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                          <span className="hidden sm:inline">Сбросить</span>
                         </button>
                       )}
                     </div>
 
                     {/* Right Flat Action Pills */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 max-w-full">
                       {isIdle && (
                         <button
                           type="button"
                           onClick={() => startTask(task.id)}
-                          className="ref-btn-pill px-5 py-2 text-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                          className="ref-btn-pill px-4 sm:px-5 py-1.5 sm:py-2 text-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
                         >
-                          <Play className="w-3.5 h-3.5 fill-current" />
+                          <Play className="w-3.5 h-3.5 fill-current shrink-0" />
                           <span>Начать задачу</span>
                         </button>
                       )}
@@ -473,18 +494,18 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
                           <button
                             type="button"
                             onClick={() => pauseTask(task.id)}
-                            className="ref-btn-soft px-4 py-2 text-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                            className="ref-btn-soft px-3 sm:px-4 py-1.5 sm:py-2 text-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
                           >
-                            <Pause className="w-3.5 h-3.5 fill-current" />
+                            <Pause className="w-3.5 h-3.5 fill-current shrink-0" />
                             <span>Пауза</span>
                           </button>
 
                           <button
                             type="button"
                             onClick={() => completeTask(task.id)}
-                            className="ref-btn-pill px-4 py-2 text-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                            className="ref-btn-pill px-3 sm:px-4 py-1.5 sm:py-2 text-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
                           >
-                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                            <Check className="w-3.5 h-3.5 stroke-[3] shrink-0" />
                             <span>Выполнить</span>
                           </button>
                         </>
@@ -495,18 +516,18 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
                           <button
                             type="button"
                             onClick={() => resumeTask(task.id)}
-                            className="ref-btn-pill px-4 py-2 text-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                            className="ref-btn-pill px-3 sm:px-4 py-1.5 sm:py-2 text-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
                           >
-                            <Play className="w-3.5 h-3.5 fill-current" />
+                            <Play className="w-3.5 h-3.5 fill-current shrink-0" />
                             <span>Продолжить</span>
                           </button>
 
                           <button
                             type="button"
                             onClick={() => completeTask(task.id)}
-                            className="ref-btn-soft px-4 py-2 text-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                            className="ref-btn-soft px-3 sm:px-4 py-1.5 sm:py-2 text-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
                           >
-                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                            <Check className="w-3.5 h-3.5 stroke-[3] shrink-0" />
                             <span>Выполнить</span>
                           </button>
                         </>

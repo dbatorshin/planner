@@ -567,10 +567,24 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [allScheduledTasks]
   );
 
-  const currentRunningTask = useMemo(
-    () => activeTasks.find((t) => t.status === 'running' || t.status === 'paused') || null,
-    [activeTasks]
-  );
+  const currentRunningTask = useMemo(() => {
+    // 1. Actively running task always has top priority for the banner
+    const running = activeTasks.find((t) => t.status === 'running');
+    if (running) return running;
+
+    // 2. If no task is running, check for any paused tasks
+    const pausedTasks = activeTasks.filter((t) => t.status === 'paused');
+    if (pausedTasks.length === 0) return null;
+
+    // 3. Return the most recently active paused task
+    return [...pausedTasks].sort((a, b) => {
+      const progA = currentDayLog.progress?.[a.id];
+      const progB = currentDayLog.progress?.[b.id];
+      const timeA = progA?.pausedTimestamp || progA?.lastStartedTimestamp || 0;
+      const timeB = progB?.pausedTimestamp || progB?.lastStartedTimestamp || 0;
+      return timeB - timeA;
+    })[0];
+  }, [activeTasks, currentDayLog]);
 
   const totalScheduledMinutes = useMemo(() => {
     return allScheduledTasks.reduce((sum, t) => sum + t.basePlannedDurationMinutes, 0);
@@ -596,7 +610,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setCurrentAlarmTask(task);
           sound.playTaskFinishedAlarm(appData.settings.selectedSoundTrack || 'june_songbirds');
           sendSystemNotification(`Время вышло: «${task.title}»`, {
-            body: `Запланированное время (${formatDuration(task.basePlannedDurationMinutes)}) полностью отработано!`,
+            body: `Запланированное время ${formatDuration(task.basePlannedDurationMinutes)} полностью отработано!`,
           });
         }
       }
@@ -823,9 +837,17 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
             endTime: newEndTime,
           };
 
-          // Auto-shift all subsequent tasks scheduled today by the same delta!
+          // Auto-shift all subsequent tasks scheduled today by the same delta
+          // Exclude completed, running, or already paused tasks to preserve their progress
           const otherTasks = prev.tasks
-            .filter((t) => t.daysOfWeek.includes(dayOfWeek) && t.id !== taskId)
+            .filter((t) => {
+              if (t.id === taskId) return false;
+              if (!t.daysOfWeek.includes(dayOfWeek)) return false;
+              if (dayLog.completedTaskIds?.includes(t.id)) return false;
+              const otherStatus = dayLog.progress?.[t.id]?.status;
+              if (otherStatus === 'running' || otherStatus === 'paused') return false;
+              return true;
+            })
             .map((t) => {
               const ov = newOverrides[t.id];
               return {
@@ -844,16 +866,35 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           }
         }
 
-        const existingProgress = dayLog.progress?.[taskId];
+        const now = Date.now();
         const newProgress: Record<string, TaskProgressState> = {
           ...(dayLog.progress || {}),
-          [taskId]: {
-            status: 'running',
-            workedSeconds: existingProgress?.workedSeconds || 0,
-            lastStartedTimestamp: Date.now(),
-            pausedTimestamp: null,
-            plannedDurationSeconds: basePlannedDurationMin * 60,
-          },
+        };
+
+        // Auto-pause any other task currently running so only one task ticks at a time
+        for (const otherId in newProgress) {
+          if (otherId !== taskId && newProgress[otherId]?.status === 'running') {
+            const otherProg = newProgress[otherId];
+            const currentStretch = otherProg.lastStartedTimestamp
+              ? Math.max(0, (now - otherProg.lastStartedTimestamp) / 1000)
+              : 0;
+            newProgress[otherId] = {
+              ...otherProg,
+              status: 'paused',
+              workedSeconds: otherProg.workedSeconds + currentStretch,
+              lastStartedTimestamp: null,
+              pausedTimestamp: now,
+            };
+          }
+        }
+
+        const existingProgress = newProgress[taskId];
+        newProgress[taskId] = {
+          status: 'running',
+          workedSeconds: existingProgress?.workedSeconds || 0,
+          lastStartedTimestamp: now,
+          pausedTimestamp: null,
+          plannedDurationSeconds: basePlannedDurationMin * 60,
         };
 
         newHistory[selectedDateStr] = {
@@ -956,10 +997,17 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           },
         };
 
-        // Shift subsequent tasks by pause minutes
-        const taskStartMin = timeToMinutes(curStart);
+        // Shift subsequent tasks by pause minutes (excluding completed or already running/paused tasks)
+        const oldEndMin = timeToMinutes(curEnd);
         const subsequent = prev.tasks
-          .filter((t) => t.daysOfWeek.includes(dayOfWeek) && t.id !== taskId)
+          .filter((t) => {
+            if (t.id === taskId) return false;
+            if (!t.daysOfWeek.includes(dayOfWeek)) return false;
+            if (dayLog.completedTaskIds?.includes(t.id)) return false;
+            const otherStatus = dayLog.progress?.[t.id]?.status;
+            if (otherStatus === 'running' || otherStatus === 'paused') return false;
+            return true;
+          })
           .map((t) => {
             const ov = newOverrides[t.id];
             return {
@@ -968,7 +1016,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
               origEnd: timeToMinutes(ov?.endTime || t.endTime),
             };
           })
-          .filter((t) => t.origStart >= taskStartMin);
+          .filter((t) => t.origStart >= oldEndMin);
 
         for (const sub of subsequent) {
           newOverrides[sub.id] = {
@@ -979,12 +1027,30 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         const newProgress: Record<string, TaskProgressState> = {
           ...(dayLog.progress || {}),
-          [taskId]: {
-            ...prog,
-            status: 'running',
-            lastStartedTimestamp: now,
-            pausedTimestamp: null,
-          },
+        };
+
+        // Auto-pause any other task currently running so only one task ticks at a time
+        for (const otherId in newProgress) {
+          if (otherId !== taskId && newProgress[otherId]?.status === 'running') {
+            const otherProg = newProgress[otherId];
+            const currentStretch = otherProg.lastStartedTimestamp
+              ? Math.max(0, (now - otherProg.lastStartedTimestamp) / 1000)
+              : 0;
+            newProgress[otherId] = {
+              ...otherProg,
+              status: 'paused',
+              workedSeconds: otherProg.workedSeconds + currentStretch,
+              lastStartedTimestamp: null,
+              pausedTimestamp: now,
+            };
+          }
+        }
+
+        newProgress[taskId] = {
+          ...prog,
+          status: 'running',
+          lastStartedTimestamp: now,
+          pausedTimestamp: null,
         };
 
         newHistory[selectedDateStr] = {
