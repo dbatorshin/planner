@@ -23,35 +23,58 @@ export const TimePickerDropdown: React.FC<TimePickerDropdownProps> = ({
   onClose,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const hoursColRef = useRef<HTMLDivElement>(null);
+  const minutesColRef = useRef<HTMLDivElement>(null);
   const selectedHourRef = useRef<HTMLButtonElement>(null);
   const selectedMinuteRef = useRef<HTMLButtonElement>(null);
 
   const [hourStr, minuteStr] = (value && value.includes(':') ? value.split(':') : ['08', '00']);
 
-  // Close when clicking outside
+  // Reliable outside-interaction handling for both desktop and mobile touch
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        onClose();
-      }
+    if (!isOpen) return;
+
+    const handleOutsidePointer = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      // If the node was removed or detached from the DOM during React re-render, ignore
+      if (!document.contains(target)) return;
+
+      // If inside our timepicker container or any child with data-timepicker, do not close
+      if (containerRef.current && containerRef.current.contains(target)) return;
+      if (target.closest && target.closest('[data-timepicker]')) return;
+
+      onClose();
     };
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+
+    document.addEventListener('pointerdown', handleOutsidePointer);
+    return () => {
+      document.removeEventListener('pointerdown', handleOutsidePointer);
+    };
   }, [isOpen, onClose]);
 
-  // Auto-scroll to selected hour and minute when dropdown opens
+  // Smooth scroll within the specific columns without shifting the outer viewport or modal
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => {
-        if (selectedHourRef.current) {
-          selectedHourRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      const timer = setTimeout(() => {
+        if (hoursColRef.current && selectedHourRef.current) {
+          const top =
+            selectedHourRef.current.offsetTop -
+            hoursColRef.current.clientHeight / 2 +
+            selectedHourRef.current.clientHeight / 2;
+          hoursColRef.current.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
         }
-        if (selectedMinuteRef.current) {
-          selectedMinuteRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        if (minutesColRef.current && selectedMinuteRef.current) {
+          const top =
+            selectedMinuteRef.current.offsetTop -
+            minutesColRef.current.clientHeight / 2 +
+            selectedMinuteRef.current.clientHeight / 2;
+          minutesColRef.current.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
         }
-      }, 60);
+      }, 70);
+
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 
@@ -66,7 +89,7 @@ export const TimePickerDropdown: React.FC<TimePickerDropdownProps> = ({
   };
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div className="relative" ref={containerRef} data-timepicker="true">
       <label className="block text-[11px] font-bold mb-1" style={{ color: 'var(--sheet-sub)' }}>
         {label}
       </label>
@@ -95,6 +118,8 @@ export const TimePickerDropdown: React.FC<TimePickerDropdownProps> = ({
       {/* Custom Modern Dropdown Menu: Hours & Minutes only */}
       {isOpen && (
         <div
+          data-timepicker="true"
+          onPointerDown={(e) => e.stopPropagation()}
           className="absolute top-full left-0 right-0 sm:w-64 mt-1.5 z-50 rounded-2xl p-3 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-xl"
           style={{
             background: 'var(--sheet-card-bg)',
@@ -113,11 +138,16 @@ export const TimePickerDropdown: React.FC<TimePickerDropdownProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 h-48">
+            <div className="grid grid-cols-2 gap-2 h-48 sm:h-52">
               {/* Hours Column (00 - 23) */}
               <div
+                ref={hoursColRef}
                 className="overflow-y-auto space-y-1 pr-1 overscroll-contain rounded-xl p-1"
-                style={{ background: 'var(--sheet-bg)' }}
+                style={{
+                  background: 'var(--sheet-bg)',
+                  touchAction: 'pan-y',
+                  WebkitOverflowScrolling: 'touch',
+                }}
               >
                 {HOURS.map((h) => {
                   const isSelected = h === hourStr;
@@ -142,8 +172,13 @@ export const TimePickerDropdown: React.FC<TimePickerDropdownProps> = ({
 
               {/* Minutes Column (00 - 59) */}
               <div
+                ref={minutesColRef}
                 className="overflow-y-auto space-y-1 pr-1 overscroll-contain rounded-xl p-1"
-                style={{ background: 'var(--sheet-bg)' }}
+                style={{
+                  background: 'var(--sheet-bg)',
+                  touchAction: 'pan-y',
+                  WebkitOverflowScrolling: 'touch',
+                }}
               >
                 {MINUTES.map((m) => {
                   const isSelected = m === minuteStr;

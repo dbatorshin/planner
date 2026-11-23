@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Trash2, Clock, Bell, Check, CalendarX } from 'lucide-react';
 import type { DayOfWeek } from '../types';
 import { usePlanner, type EffectiveTask } from '../context/PlannerContext';
@@ -70,32 +70,44 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const durationMinutes = getDurationMinutes(startTime, endTime);
   const formattedDuration = formatDuration(durationMinutes);
 
+  // Only re-initialize form state when modal opens or selected task changes
+  const prevIsOpenRef = useRef(false);
+  const prevTaskIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    setOpenTimePicker(null);
-    if (taskToEdit) {
-      setTitle(taskToEdit.title);
-      setCategory(taskToEdit.category || 'Работа');
-      setColor(taskToEdit.color || '#2563eb');
-      setStartTime(taskToEdit.effectiveStartTime || taskToEdit.startTime || '08:00');
-      setEndTime(taskToEdit.effectiveEndTime || taskToEdit.endTime || '12:00');
-      setDaysOfWeek(taskToEdit.daysOfWeek || [0, 1, 2, 3, 4, 5, 6]);
-      setAlarmEnabled(taskToEdit.alarmEnabled ?? true);
-      setApplyScope('today');
-      setAutoShiftSubsequent(true);
-      setConfirmDelete(false);
-    } else {
-      setTitle('');
-      setCategory(categories[0] || 'Работа');
-      setColor('#2563eb');
-      setStartTime('08:00');
-      setEndTime('12:00');
-      setDaysOfWeek([0, 1, 2, 3, 4, 5, 6]);
-      setAlarmEnabled(true);
-      setApplyScope('future');
-      setAutoShiftSubsequent(true);
-      setConfirmDelete(false);
+    const isOpening = isOpen && !prevIsOpenRef.current;
+    const isTaskChanged = isOpen && taskToEdit?.id !== prevTaskIdRef.current;
+
+    if (isOpening || isTaskChanged) {
+      setOpenTimePicker(null);
+      if (taskToEdit) {
+        setTitle(taskToEdit.title);
+        setCategory(taskToEdit.category || 'Работа');
+        setColor(taskToEdit.color || '#2563eb');
+        setStartTime(taskToEdit.effectiveStartTime || taskToEdit.startTime || '08:00');
+        setEndTime(taskToEdit.effectiveEndTime || taskToEdit.endTime || '12:00');
+        setDaysOfWeek(taskToEdit.daysOfWeek || [0, 1, 2, 3, 4, 5, 6]);
+        setAlarmEnabled(taskToEdit.alarmEnabled ?? true);
+        setApplyScope('today');
+        setAutoShiftSubsequent(true);
+        setConfirmDelete(false);
+      } else {
+        setTitle('');
+        setCategory(categories[0] || 'Работа');
+        setColor('#2563eb');
+        setStartTime('08:00');
+        setEndTime('12:00');
+        setDaysOfWeek([0, 1, 2, 3, 4, 5, 6]);
+        setAlarmEnabled(true);
+        setApplyScope('future');
+        setAutoShiftSubsequent(true);
+        setConfirmDelete(false);
+      }
     }
-  }, [taskToEdit, isOpen, categories]);
+
+    prevIsOpenRef.current = isOpen;
+    prevTaskIdRef.current = taskToEdit?.id || null;
+  }, [isOpen, taskToEdit]);
 
   if (!isOpen) return null;
 

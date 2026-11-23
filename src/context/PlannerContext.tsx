@@ -319,9 +319,12 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
               ...currentData.account,
             },
           };
-          latestAppDataRef.current = finalMerged;
-          storage.save(finalMerged);
-          setAppData(finalMerged);
+          // Only update local state if remote data actually contains new changes
+          if (JSON.stringify(currentData) !== JSON.stringify(finalMerged)) {
+            latestAppDataRef.current = finalMerged;
+            storage.save(finalMerged);
+            setAppData(finalMerged);
+          }
           setSyncStatus('synced');
         }
       } catch {}
