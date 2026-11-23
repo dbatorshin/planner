@@ -296,6 +296,48 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, [appData?.account?.cloudSyncEnabled, appData?.account?.supabaseUrl, appData?.account?.supabaseAnonKey, appData?.account?.email, isSyncing, triggerSync]);
 
+  // 1-Click Sync Setup Link listener (e.g. sent from desktop to smartphone via #sync=...)
+  useEffect(() => {
+    try {
+      const hash = window.location.hash;
+      if (hash && (hash.includes('sync=') || hash.includes('sync_setup='))) {
+        const match = hash.match(/(?:sync|sync_setup)=([^&]+)/);
+        if (match && match[1]) {
+          const jsonStr = decodeURIComponent(atob(decodeURIComponent(match[1])));
+          const cfg = JSON.parse(jsonStr);
+          if (cfg && cfg.u && cfg.k) {
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+            const targetUrl = cfg.u.trim();
+            const targetKey = cfg.k.trim();
+            const targetEmail = (cfg.e || 'user@planner.app').trim();
+
+            setAppData((prev) => {
+              const updated: AppData = {
+                ...prev,
+                account: {
+                  ...(prev.account || { email: targetEmail, displayName: 'Пользователь', cloudSyncEnabled: true }),
+                  supabaseUrl: targetUrl,
+                  supabaseAnonKey: targetKey,
+                  cloudSyncEnabled: true,
+                  email: targetEmail,
+                },
+              };
+              storage.save(updated);
+              return updated;
+            });
+
+            showToast('Синхронизация настроена в 1 клик!');
+            setTimeout(() => {
+              triggerSync(targetUrl, targetKey);
+            }, 300);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not parse sync setup hash from URL:', e);
+    }
+  }, [triggerSync, showToast]);
+
   // Update Account
   const updateAccount = useCallback((updates: Partial<UserAccount>) => {
     isUserMutationRef.current = true;

@@ -43,7 +43,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
   const [supabaseKey, setSupabaseKey] = useState(() => appData?.account?.supabaseAnonKey || '');
   const [syncEnabled, setSyncEnabled] = useState(() => appData?.account?.cloudSyncEnabled || false);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(() => !appData?.account?.supabaseUrl || !appData?.account?.supabaseAnonKey);
   const [hasPinState, setHasPinState] = useState(() => isPinConfigured());
   const [biometricsEnabled, setBiometricsEnabledState] = useState(() => isBiometricsEnabled());
   const [isBiometricsSupported, setIsBiometricsSupported] = useState(false);
@@ -53,8 +53,19 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
       setHasPinState(isPinConfigured());
       setBiometricsEnabledState(isBiometricsEnabled());
       isPlatformAuthenticatorAvailable().then(setIsBiometricsSupported);
+      if (!appData?.account?.supabaseUrl || !appData?.account?.supabaseAnonKey) {
+        setShowAdvanced(true);
+      }
     }
   }, [isOpen]);
+
+  const handleToggleSync = (checked: boolean) => {
+    setSyncEnabled(checked);
+    if (checked && (!supabaseUrl.trim() || !supabaseKey.trim())) {
+      setShowAdvanced(true);
+      showToast('Укажите параметры Supabase ниже для синхронизации');
+    }
+  };
 
   const handleToggleBiometrics = async (checked: boolean) => {
     haptic.light();
@@ -304,7 +315,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
               <input
                 type="checkbox"
                 checked={syncEnabled}
-                onChange={(e) => setSyncEnabled(e.target.checked)}
+                onChange={(e) => handleToggleSync(e.target.checked)}
                 className="sr-only peer"
               />
               <div
@@ -413,9 +424,17 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
                   />
                 </div>
 
-                <p className="text-[10px] font-semibold leading-normal" style={{ color: 'var(--sheet-sub)' }}>
-                  💡 Приложение использует ту же таблицу <code className="font-mono px-1 py-0.5 rounded" style={{ background: 'var(--sheet-bg)' }}>user_routines</code> из «Ежедневок», сохраняя данные отдельно с суффиксом <code className="font-mono px-1 py-0.5 rounded" style={{ background: 'var(--sheet-bg)' }}>#planner</code>.
-                </p>
+                <div className="p-3 rounded-xl space-y-1.5" style={{ background: 'var(--sheet-bg)' }}>
+                  <p className="text-[11px] font-bold" style={{ color: 'var(--sheet-title)' }}>
+                    💡 Как настроить синхронизацию:
+                  </p>
+                  <p className="text-[10px] font-semibold leading-relaxed" style={{ color: 'var(--sheet-sub)' }}>
+                    1. Укажите те же Project URL и Anon Key, что и в «Ежедневках». База данных общая — задачи из «Ежедневок» не затронутся, так как планер хранит данные с суффиксом <code className="font-mono px-1 py-0.5 rounded bg-black/10">#planner</code>.
+                  </p>
+                  <p className="text-[10px] font-semibold leading-relaxed" style={{ color: 'var(--sheet-sub)' }}>
+                    2. Либо настройте параметры один раз на компьютере и нажмите «Скопировать ссылку для настройки телефона» выше — телефон подключится автоматически без ручного ввода ключей.
+                  </p>
+                </div>
               </div>
             )}
           </div>
