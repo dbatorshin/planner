@@ -35,6 +35,33 @@ export const SOUND_TRACKS: SoundTrackInfo[] = [
 class SoundEngine {
   private ctx: AudioContext | null = null;
   private currentAudio: HTMLAudioElement | null = null;
+  private audioUnlocked = false;
+
+  constructor() {
+    // iOS Safari requires AudioContext to be created AND resumed inside a user gesture.
+    // We unlock it on the first touch/click so background alarms play reliably.
+    if (typeof window !== 'undefined') {
+      const unlock = () => {
+        if (this.audioUnlocked) return;
+        this.initContext();
+        // Play and immediately stop a silent buffer to fully unlock the context
+        if (this.ctx) {
+          const buf = this.ctx.createBuffer(1, 1, 22050);
+          const src = this.ctx.createBufferSource();
+          src.buffer = buf;
+          src.connect(this.ctx.destination);
+          src.start(0);
+          src.stop(0.001);
+          this.ctx.resume().catch(() => {});
+        }
+        this.audioUnlocked = true;
+      };
+      window.addEventListener('touchstart', unlock, { once: true, passive: true });
+      window.addEventListener('touchend', unlock, { once: true, passive: true });
+      window.addEventListener('click', unlock, { once: true });
+      window.addEventListener('keydown', unlock, { once: true });
+    }
+  }
 
   private initContext() {
     if (!this.ctx && typeof window !== 'undefined') {

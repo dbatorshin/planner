@@ -116,6 +116,38 @@ export function mergeAppData(remote: AppData, local: AppData): AppData {
       ...(lLog.excludedTaskIds || []),
     ]);
 
+    // ---- LWW (Last-Write-Wins) merge of task progress across devices ----
+    // For each task, pick whichever device has the MOST RECENT activity timestamp.
+    // This ensures that "pause on phone" is not overwritten by "still running on desktop".
+    const getProgressTimestamp = (p?: { status?: string; lastStartedTimestamp?: number | null; pausedTimestamp?: number | null }): number => {
+      if (!p) return 0;
+      if (p.status === 'paused' || p.status === 'completed') return p.pausedTimestamp || p.lastStartedTimestamp || 0;
+      return p.lastStartedTimestamp || 0;
+    };
+
+    const allProgressTaskIds = new Set([
+      ...Object.keys(rLog.progress || {}),
+      ...Object.keys(lLog.progress || {}),
+    ]);
+
+    const mergedProgress: Record<string, import('../types').TaskProgressState> = {};
+    allProgressTaskIds.forEach((taskId) => {
+      const rProg = (rLog.progress || {})[taskId];
+      const lProg = (lLog.progress || {})[taskId];
+      if (!rProg) { mergedProgress[taskId] = lProg; return; }
+      if (!lProg) { mergedProgress[taskId] = rProg; return; }
+
+      // If one side is 'completed', always prefer completed
+      if (lProg.status === 'completed') { mergedProgress[taskId] = lProg; return; }
+      if (rProg.status === 'completed') { mergedProgress[taskId] = rProg; return; }
+
+      // Otherwise pick the most recently changed record (Last-Write-Wins)
+      const tLocal = getProgressTimestamp(lProg);
+      const tRemote = getProgressTimestamp(rProg);
+      mergedProgress[taskId] = tLocal >= tRemote ? lProg : rProg;
+    });
+    // -----------------------------------------------------------------------
+
     mergedHistory[dateStr] = {
       completedTaskIds: Array.from(allCompleted).filter((id) => !allDeletedTaskIds.has(id)),
       excludedTaskIds: Array.from(allExcluded).filter((id) => !allDeletedTaskIds.has(id)),
@@ -127,10 +159,7 @@ export function mergeAppData(remote: AppData, local: AppData): AppData {
         ...(rLog.overrides || {}),
         ...(lLog.overrides || {}),
       },
-      progress: {
-        ...(rLog.progress || {}),
-        ...(lLog.progress || {}),
-      },
+      progress: mergedProgress,
     };
   });
 

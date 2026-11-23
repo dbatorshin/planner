@@ -179,7 +179,8 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }, 4000);
   }, []);
 
-  // Cloud Sync: Automatic Debounced Push to Supabase on local user mutation (500ms)
+  // Cloud Sync: Automatic Debounced Push to Supabase on local user mutation (200ms)
+  // Using a short debounce so that pause/resume actions propagate to other devices quickly.
   useEffect(() => {
     if (!isUserMutationRef.current) return;
     if (!appData?.account?.cloudSyncEnabled || !appData?.account?.supabaseUrl || !appData?.account?.supabaseAnonKey) {
@@ -209,7 +210,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       } finally {
         setIsSyncing(false);
       }
-    }, 600);
+    }, 200);
 
     return () => clearTimeout(timeout);
   }, [appData]);
@@ -343,8 +344,8 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     window.addEventListener('online', handleOnline);
     document.addEventListener('visibilitychange', handleVisibility);
 
-    // Periodic pull every 10 seconds when online
-    const interval = setInterval(pullRemote, 10000);
+    // Poll every 5 s — fast enough to catch cross-device pause/resume within one poll cycle
+    const interval = setInterval(pullRemote, 5000);
 
     return () => {
       window.removeEventListener('focus', pullRemote);

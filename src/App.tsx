@@ -1,16 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { PlannerProvider, usePlanner, type EffectiveTask } from './context/PlannerContext';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { DayView } from './components/DayView';
 import { WeekView } from './components/WeekView';
-import { TaskModal } from './components/TaskModal';
-import { SettingsModal } from './components/SettingsModal';
-import { AccountModal } from './components/AccountModal';
 import { AlarmModal } from './components/AlarmModal';
 import { Toast } from './components/Toast';
 import { PinLock, isAppUnlocked } from './components/PinLock';
 import { haptic } from './utils/haptics';
+
+// Lazy-loaded heavy modals — split from main bundle to reduce initial JS parse time
+const TaskModal = lazy(() => import('./components/TaskModal').then(m => ({ default: m.TaskModal })));
+const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
+const AccountModal = lazy(() => import('./components/AccountModal').then(m => ({ default: m.AccountModal })));
 
 const MainContent: React.FC<{
   installPrompt: any;
@@ -76,25 +78,27 @@ const MainContent: React.FC<{
         </main>
 
         {/* Modals & Alerts */}
-        <TaskModal
-          isOpen={isTaskModalOpen}
-          onClose={() => {
-            setIsTaskModalOpen(false);
-            setTaskToEdit(null);
-          }}
-          taskToEdit={taskToEdit}
-        />
+        <Suspense fallback={null}>
+          <TaskModal
+            isOpen={isTaskModalOpen}
+            onClose={() => {
+              setIsTaskModalOpen(false);
+              setTaskToEdit(null);
+            }}
+            taskToEdit={taskToEdit}
+          />
 
-        <SettingsModal
-          isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
-          onOpenAccount={() => setIsAccountOpen(true)}
-        />
+          <SettingsModal
+            isOpen={isSettingsOpen}
+            onClose={() => setIsSettingsOpen(false)}
+            onOpenAccount={() => setIsAccountOpen(true)}
+          />
 
-        <AccountModal
-          isOpen={isAccountOpen}
-          onClose={() => setIsAccountOpen(false)}
-        />
+          <AccountModal
+            isOpen={isAccountOpen}
+            onClose={() => setIsAccountOpen(false)}
+          />
+        </Suspense>
 
         <AlarmModal />
         <Toast />
