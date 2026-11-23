@@ -142,8 +142,8 @@ export async function registerBiometrics(): Promise<{ success: boolean; error?: 
         rp,
         user: {
           id: userId,
-          name: 'planner-user',
-          displayName: 'Пользователь Планера',
+          name: 'Планер',
+          displayName: 'Планер',
         },
         pubKeyCredParams: [
           { alg: -7, type: 'public-key' },   // ES256 (iOS / Android)
@@ -207,7 +207,6 @@ export async function verifyBiometrics(): Promise<{ success: boolean; error?: st
         {
           id: base64ToArrayBuffer(credIdBase64),
           type: 'public-key',
-          transports: ['internal'],
         },
       ];
     } catch (e) {

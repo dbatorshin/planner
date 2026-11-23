@@ -329,43 +329,54 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
             </label>
           </div>
 
-          {/* Quick Connect Mobile Link Button */}
-          {supabaseUrl && supabaseKey && (
-            <div
-              className="p-3.5 rounded-2xl space-y-2"
-              style={{
-                background: 'var(--sheet-card-bg)',
-                boxShadow: 'var(--sheet-card-shadow)',
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wide flex items-center gap-1.5" style={{ color: 'var(--sheet-title)' }}>
-                  <Smartphone className="w-3.5 h-3.5" style={{ color: 'var(--theme-primary)' }} />
-                  Быстрое подключение на смартфоне
+          {/* Quick Connect Mobile Link Card */}
+          <div
+            className="p-3.5 rounded-2xl space-y-2.5 transition-all"
+            style={{
+              background: 'var(--sheet-card-bg)',
+              boxShadow: 'var(--sheet-card-shadow)',
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black uppercase tracking-wide flex items-center gap-1.5" style={{ color: 'var(--sheet-title)' }}>
+                <Smartphone className="w-3.5 h-3.5" style={{ color: 'var(--theme-primary)' }} />
+                Быстрое подключение на смартфоне
+              </span>
+              {Boolean(supabaseUrl.trim() && supabaseKey.trim()) ? (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/15 text-emerald-600">
+                  Готово к отправке
                 </span>
-              </div>
-              <p className="text-[11px] font-bold leading-relaxed" style={{ color: 'var(--sheet-sub)' }}>
-                Нажмите кнопку ниже, чтобы скопировать волшебную ссылку. Отправьте её себе в Telegram/WhatsApp и откройте на телефоне — телефон настроится за 1 секунду без ввода ключей!
-              </p>
-              <button
-                type="button"
-                onClick={handleCopyMobileLink}
-                className="ref-btn-pill w-full py-2.5 px-4 text-xs flex items-center justify-center gap-2 cursor-pointer active:scale-95"
-              >
-                {copiedLink ? (
-                  <>
-                    <Check className="w-4 h-4 stroke-[3]" />
-                    <span>Ссылка скопирована! Откройте на телефоне</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4" />
-                    <span>Скопировать ссылку для настройки телефона</span>
-                  </>
-                )}
-              </button>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/15 text-amber-600">
+                  Требуются ключи
+                </span>
+              )}
             </div>
-          )}
+            <p className="text-[11px] font-bold leading-relaxed" style={{ color: 'var(--sheet-sub)' }}>
+              {Boolean(supabaseUrl.trim() && supabaseKey.trim())
+                ? 'Нажмите кнопку ниже, чтобы скопировать ссылку. Отправьте её себе в Telegram или WhatsApp и откройте на телефоне — телефон настроится за 1 секунду без ввода ключей!'
+                : 'Вставьте ваши Project URL и Anon Key в параметры ниже, затем нажмите эту кнопку для быстрой отправки ссылки на смартфон.'}
+            </p>
+            <button
+              type="button"
+              onClick={handleCopyMobileLink}
+              className={`ref-btn-pill w-full py-2.5 px-4 text-xs flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all ${
+                !supabaseUrl.trim() || !supabaseKey.trim() ? 'opacity-70' : ''
+              }`}
+            >
+              {copiedLink ? (
+                <>
+                  <Check className="w-4 h-4 stroke-[3]" />
+                  <span>Ссылка скопирована! Откройте на телефоне</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  <span>Скопировать ссылку для настройки телефона</span>
+                </>
+              )}
+            </button>
+          </div>
 
           {/* Collapsible Supabase Parameters */}
           <div
@@ -393,14 +404,23 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
             {showAdvanced && (
               <div className="space-y-3 pt-2">
                 <div>
-                  <label className="block text-[11px] font-bold mb-1" style={{ color: 'var(--sheet-sub)' }}>
-                    Supabase Project URL:
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold" style={{ color: 'var(--sheet-sub)' }}>
+                      Supabase Project URL:
+                    </label>
+                    <span
+                      className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                        supabaseUrl.trim() ? 'bg-emerald-500/15 text-emerald-600' : 'bg-slate-200 text-slate-500'
+                      }`}
+                    >
+                      {supabaseUrl.trim() ? 'Заполнено' : 'Не заполнено'}
+                    </span>
+                  </div>
                   <input
                     type="url"
                     value={supabaseUrl}
                     onChange={(e) => setSupabaseUrl(e.target.value)}
-                    placeholder="https://xyzcompany.supabase.co"
+                    placeholder="Вставьте URL, например: https://abcdef.supabase.co"
                     className="w-full px-3 py-2 rounded-xl text-xs font-mono font-bold outline-none"
                     style={{
                       background: 'var(--sheet-bg)',
@@ -410,14 +430,23 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold mb-1" style={{ color: 'var(--sheet-sub)' }}>
-                    Supabase Anon Public Key:
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold" style={{ color: 'var(--sheet-sub)' }}>
+                      Supabase Anon Public Key:
+                    </label>
+                    <span
+                      className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                        supabaseKey.trim() ? 'bg-emerald-500/15 text-emerald-600' : 'bg-slate-200 text-slate-500'
+                      }`}
+                    >
+                      {supabaseKey.trim() ? 'Заполнено' : 'Не заполнено'}
+                    </span>
+                  </div>
                   <textarea
                     rows={2}
                     value={supabaseKey}
                     onChange={(e) => setSupabaseKey(e.target.value)}
-                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    placeholder="Вставьте anon key из раздела Project Settings -> API"
                     className="w-full px-3 py-2 rounded-xl text-xs font-mono font-bold outline-none"
                     style={{
                       background: 'var(--sheet-bg)',
@@ -434,7 +463,10 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
                     1. Укажите те же Project URL и Anon Key, что и в «Ежедневках». База данных общая — задачи из «Ежедневок» не затронутся, так как планер хранит данные с суффиксом <code className="font-mono px-1 py-0.5 rounded bg-black/10">#planner</code>.
                   </p>
                   <p className="text-[10px] font-semibold leading-relaxed" style={{ color: 'var(--sheet-sub)' }}>
-                    2. Либо настройте параметры один раз на компьютере и нажмите «Скопировать ссылку для настройки телефона» выше — телефон подключится автоматически без ручного ввода ключей.
+                    2. Нажмите «Сохранить и синхронизировать» внизу.
+                  </p>
+                  <p className="text-[10px] font-semibold leading-relaxed" style={{ color: 'var(--sheet-sub)' }}>
+                    3. Затем нажмите кнопку выше «Скопировать ссылку для настройки телефона» — отправьте её себе в мессенджер и откройте на телефоне. Телефон подключится мгновенно без ручного ввода ключей.
                   </p>
                 </div>
               </div>
