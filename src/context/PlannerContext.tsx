@@ -478,12 +478,17 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const effectiveStartTime = override?.startTime || t.startTime;
       const effectiveEndTime = override?.endTime || t.endTime;
       const effectiveDurationMinutes = getDurationMinutes(effectiveStartTime, effectiveEndTime);
+      const effectiveDurationSeconds = effectiveDurationMinutes * 60;
 
-      // Base planned duration strictly from template (e.g. 08:00–12:00 -> 240 mins)
-      // Pauses shift the clock schedule window, but DO NOT increase the work quota!
-      const basePlannedDurationMinutes = getDurationMinutes(t.startTime, t.endTime);
-      const plannedDurationSeconds =
-        prog?.plannedDurationSeconds || basePlannedDurationMinutes * 60;
+      // Base planned duration in seconds: either from live progress, or from the scheduled task duration
+      // Guard: work quota cannot exceed the effective window duration allocated on the schedule
+      let plannedDurationSeconds = prog?.plannedDurationSeconds ?? effectiveDurationSeconds;
+      if (plannedDurationSeconds > effectiveDurationSeconds) {
+        plannedDurationSeconds = effectiveDurationSeconds;
+      }
+
+      // Base planned duration in minutes shown in cards and summaries
+      const basePlannedDurationMinutes = Math.round(plannedDurationSeconds / 60);
 
       let status: 'idle' | 'running' | 'paused' | 'completed' = 'idle';
       let workedSeconds = prog?.workedSeconds || 0;
@@ -542,7 +547,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const effectiveStartTime = override?.startTime || t.startTime;
       const effectiveEndTime = override?.endTime || t.endTime;
       const effectiveDurationMinutes = getDurationMinutes(effectiveStartTime, effectiveEndTime);
-      const basePlannedDurationMinutes = getDurationMinutes(t.startTime, t.endTime);
+      const basePlannedDurationMinutes = effectiveDurationMinutes;
 
       return {
         ...t,
@@ -749,9 +754,21 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
             }
           }
 
+          const newProgress = { ...(dayLog.progress || {}) };
+          if (data.startTime || data.endTime) {
+            const newDurationSec = getDurationMinutes(newStart, newEnd) * 60;
+            if (newProgress[taskId]) {
+              newProgress[taskId] = {
+                ...newProgress[taskId],
+                plannedDurationSeconds: newDurationSec,
+              };
+            }
+          }
+
           newHistory[selectedDateStr] = {
             ...dayLog,
             overrides: newOverrides,
+            progress: newProgress,
           };
 
           return {
@@ -771,9 +788,23 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           const newOverrides = { ...(dayLog.overrides || {}) };
           delete newOverrides[taskId];
 
+          const newProgress = { ...(dayLog.progress || {}) };
+          if (data.startTime || data.endTime) {
+            const finalStart = data.startTime || oldTask.startTime;
+            const finalEnd = data.endTime || oldTask.endTime;
+            const newDurationSec = getDurationMinutes(finalStart, finalEnd) * 60;
+            if (newProgress[taskId]) {
+              newProgress[taskId] = {
+                ...newProgress[taskId],
+                plannedDurationSeconds: newDurationSec,
+              };
+            }
+          }
+
           newHistory[selectedDateStr] = {
             ...dayLog,
             overrides: newOverrides,
+            progress: newProgress,
           };
 
           return {
@@ -814,11 +845,12 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const currentScheduledEnd =
           dayLog.overrides?.[taskId]?.endTime || targetTask.endTime;
 
-        // Base planned duration in minutes (e.g. 08:00 - 12:00 = 240 mins)
-        const basePlannedDurationMin = getDurationMinutes(
-          targetTask.startTime,
-          targetTask.endTime
+        // Current scheduled duration for this task today
+        const scheduledDurationMin = getDurationMinutes(
+          currentScheduledStart,
+          currentScheduledEnd
         );
+        const scheduledDurationSec = scheduledDurationMin * 60;
 
         const realNowStr = getCurrentTimeString();
         const oldStartMin = timeToMinutes(currentScheduledStart);
@@ -835,7 +867,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         if (deltaMinutes !== 0) {
           newStartTime = realNowStr;
-          newEndTime = addMinutesToTime(realNowStr, basePlannedDurationMin);
+          newEndTime = addMinutesToTime(realNowStr, scheduledDurationMin);
           newOverrides[taskId] = {
             startTime: newStartTime,
             endTime: newEndTime,
@@ -898,7 +930,9 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           workedSeconds: existingProgress?.workedSeconds || 0,
           lastStartedTimestamp: now,
           pausedTimestamp: null,
-          plannedDurationSeconds: basePlannedDurationMin * 60,
+          plannedDurationSeconds: existingProgress?.plannedDurationSeconds
+            ? Math.min(existingProgress.plannedDurationSeconds, scheduledDurationSec)
+            : scheduledDurationSec,
         };
 
         newHistory[selectedDateStr] = {
@@ -1185,13 +1219,14 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       setAppData((prev) => {
         const targetTask = prev.tasks.find((t) => t.id === taskId);
-        const basePlannedDurationMin = targetTask
-          ? getDurationMinutes(targetTask.startTime, targetTask.endTime)
-          : 0;
-
         const newHistory = { ...prev.history };
         const dayLog = newHistory[selectedDateStr];
         if (!dayLog) return prev;
+
+        const override = dayLog.overrides?.[taskId];
+        const effectiveStart = override?.startTime || targetTask?.startTime || '08:00';
+        const effectiveEnd = override?.endTime || targetTask?.endTime || '12:00';
+        const basePlannedDurationMin = getDurationMinutes(effectiveStart, effectiveEnd);
 
         const newCompleted = (dayLog.completedTaskIds || []).filter((id) => id !== taskId);
         const newCompletedAt = { ...(dayLog.completedAt || {}) };
