@@ -74,22 +74,26 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
       <div className="flex items-center justify-between gap-2 px-1">
         <button
           onClick={handlePrevDay}
-          className="ref-btn-circle w-10 h-10 cursor-pointer active:scale-95"
+          className="ref-btn-circle w-10 h-10 cursor-pointer active:scale-95 shrink-0"
           title="Предыдущий день"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
 
-        <div className="flex items-center gap-2">
-          <div className="text-center">
-            <h2 className="text-base sm:text-lg font-black tracking-tight leading-tight" style={{ color: 'var(--glass-text-title)' }}>
-              {capitalizedDayOfWeek}, {formattedDayAndMonth}
+        <div className="flex items-center justify-center gap-2 flex-1 min-w-0">
+          <div className="text-center min-w-0">
+            <h2
+              className="text-base sm:text-lg font-black tracking-tight leading-tight flex flex-wrap items-center justify-center gap-x-1.5"
+              style={{ color: 'var(--glass-text-title)' }}
+            >
+              <span className="whitespace-nowrap">{capitalizedDayOfWeek},</span>
+              <span className="whitespace-nowrap">{formattedDayAndMonth}</span>
             </h2>
           </div>
           {!isCurrentToday && (
             <button
               onClick={goToToday}
-              className="ref-btn-pill px-3 py-1 text-[11px] cursor-pointer"
+              className="ref-btn-pill px-2.5 py-1 text-[11px] font-bold cursor-pointer shrink-0 active:scale-95"
             >
               Сегодня
             </button>
@@ -98,7 +102,7 @@ export const DayView: React.FC<DayViewProps> = ({ onEditTask, onAddNewTask }) =>
 
         <button
           onClick={handleNextDay}
-          className="ref-btn-circle w-10 h-10 cursor-pointer active:scale-95"
+          className="ref-btn-circle w-10 h-10 cursor-pointer active:scale-95 shrink-0"
           title="Следующий день"
         >
           <ChevronRight className="w-5 h-5" />
