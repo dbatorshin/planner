@@ -509,6 +509,28 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       }
 
+      // If viewing today, synchronize workedSeconds so it cannot exceed the real-world
+      // elapsed time since the scheduled start time
+      if (isCurrentToday && (status === 'running' || status === 'paused')) {
+        const realNowMin = timeToMinutes(getCurrentTimeString());
+        const startMin = timeToMinutes(effectiveStartTime);
+        if (startMin <= realNowMin) {
+          const maxElapsedSec = (realNowMin - startMin) * 60;
+          if (workedSeconds > maxElapsedSec) {
+            workedSeconds = maxElapsedSec;
+          }
+        } else {
+          // Scheduled in the future today
+          workedSeconds = 0;
+          status = 'idle';
+        }
+      }
+
+      // Worked seconds cannot exceed planned duration
+      if (workedSeconds > plannedDurationSeconds) {
+        workedSeconds = plannedDurationSeconds;
+      }
+
       const remainingSeconds = Math.max(0, plannedDurationSeconds - workedSeconds);
 
       return {
@@ -757,9 +779,40 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           const newProgress = { ...(dayLog.progress || {}) };
           if (data.startTime || data.endTime) {
             const newDurationSec = getDurationMinutes(newStart, newEnd) * 60;
-            if (newProgress[taskId]) {
+            const curProg = newProgress[taskId];
+            if (curProg) {
+              const nowMin = timeToMinutes(getCurrentTimeString());
+              const newStartMin = timeToMinutes(newStart);
+              let newWorked = curProg.workedSeconds;
+              let newStatus = curProg.status;
+              let newLastStarted = curProg.lastStartedTimestamp;
+              let newPaused = curProg.pausedTimestamp;
+
+              if (newStartMin > nowMin) {
+                newStatus = 'idle';
+                newWorked = 0;
+                newLastStarted = null;
+                newPaused = null;
+              } else {
+                const maxAllowedSec = Math.max(0, (nowMin - newStartMin) * 60);
+                if (newWorked > maxAllowedSec) {
+                  newWorked = maxAllowedSec;
+                  if (newStatus === 'running') {
+                    newLastStarted = Date.now();
+                  }
+                }
+              }
+
+              if (newWorked > newDurationSec) {
+                newWorked = newDurationSec;
+              }
+
               newProgress[taskId] = {
-                ...newProgress[taskId],
+                ...curProg,
+                status: newStatus,
+                workedSeconds: newWorked,
+                lastStartedTimestamp: newLastStarted,
+                pausedTimestamp: newPaused,
                 plannedDurationSeconds: newDurationSec,
               };
             }
@@ -793,9 +846,40 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
             const finalStart = data.startTime || oldTask.startTime;
             const finalEnd = data.endTime || oldTask.endTime;
             const newDurationSec = getDurationMinutes(finalStart, finalEnd) * 60;
-            if (newProgress[taskId]) {
+            const curProg = newProgress[taskId];
+            if (curProg) {
+              const nowMin = timeToMinutes(getCurrentTimeString());
+              const finalStartMin = timeToMinutes(finalStart);
+              let newWorked = curProg.workedSeconds;
+              let newStatus = curProg.status;
+              let newLastStarted = curProg.lastStartedTimestamp;
+              let newPaused = curProg.pausedTimestamp;
+
+              if (finalStartMin > nowMin) {
+                newStatus = 'idle';
+                newWorked = 0;
+                newLastStarted = null;
+                newPaused = null;
+              } else {
+                const maxAllowedSec = Math.max(0, (nowMin - finalStartMin) * 60);
+                if (newWorked > maxAllowedSec) {
+                  newWorked = maxAllowedSec;
+                  if (newStatus === 'running') {
+                    newLastStarted = Date.now();
+                  }
+                }
+              }
+
+              if (newWorked > newDurationSec) {
+                newWorked = newDurationSec;
+              }
+
               newProgress[taskId] = {
-                ...newProgress[taskId],
+                ...curProg,
+                status: newStatus,
+                workedSeconds: newWorked,
+                lastStartedTimestamp: newLastStarted,
+                pausedTimestamp: newPaused,
                 plannedDurationSeconds: newDurationSec,
               };
             }
