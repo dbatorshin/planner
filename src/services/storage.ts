@@ -2,13 +2,16 @@ import type { AppData, UserAccount } from '../types';
 
 const STORAGE_KEY = 'planner_app_data_v1';
 
+export const DEFAULT_SUPABASE_URL = 'https://zslokbquzrqhgcjsvzoq.supabase.co';
+export const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzbG9rYnF1enJxaGdjanN2em9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ3MzcyNjcsImV4cCI6MjExMDMxMzI2N30.C8xZdBOMqtsMGNlIB1KlptkF-6iXQqib5PG9E8VLlYE';
+
 export function getAutoImportedAccount(): UserAccount {
   const defaultAcc: UserAccount = {
     email: 'user@planner.app',
     displayName: 'Пользователь',
-    cloudSyncEnabled: false,
-    supabaseUrl: '',
-    supabaseAnonKey: '',
+    cloudSyncEnabled: true,
+    supabaseUrl: DEFAULT_SUPABASE_URL,
+    supabaseAnonKey: DEFAULT_SUPABASE_KEY,
   };
 
   if (typeof window === 'undefined') return defaultAcc;
@@ -88,16 +91,22 @@ export const storage = {
       }
       const parsed = JSON.parse(serialized);
 
+      const rawUrl = parsed.account?.supabaseUrl?.trim();
+      const rawKey = parsed.account?.supabaseAnonKey?.trim();
+      const finalUrl = rawUrl || autoAcc.supabaseUrl;
+      const finalKey = rawKey || autoAcc.supabaseAnonKey;
+
       return {
         ...INITIAL_APP_DATA,
         ...parsed,
         account: {
           ...autoAcc,
           ...(parsed.account || {}),
-          // If local account doesn't have supabase credentials, borrow from autoAcc
-          supabaseUrl: parsed.account?.supabaseUrl || autoAcc.supabaseUrl,
-          supabaseAnonKey: parsed.account?.supabaseAnonKey || autoAcc.supabaseAnonKey,
-          cloudSyncEnabled: parsed.account?.cloudSyncEnabled ?? autoAcc.cloudSyncEnabled,
+          supabaseUrl: finalUrl,
+          supabaseAnonKey: finalKey,
+          cloudSyncEnabled: (finalUrl && finalKey)
+            ? (parsed.account?.cloudSyncEnabled ?? true)
+            : false,
         },
         tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
         categories: Array.isArray(parsed.categories) && parsed.categories.length > 0
