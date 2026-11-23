@@ -16,6 +16,7 @@ import {
   pushToCloud,
   fetchFromCloud,
   syncWithCloud,
+  mergeAppData,
 } from '../services/supabase';
 import {
   timeToMinutes,
@@ -84,7 +85,11 @@ interface PlannerContextType {
   // Cloud Sync & Account
   isSyncing: boolean;
   syncStatus: 'synced' | 'syncing' | 'error' | 'idle';
-  triggerSync: (overrideUrl?: string, overrideKey?: string) => Promise<{ success: boolean; message?: string }>;
+  triggerSync: (
+    overrideUrl?: string,
+    overrideKey?: string,
+    overrideAccount?: Partial<UserAccount>
+  ) => Promise<{ success: boolean; message?: string }>;
   updateAccount: (updates: Partial<UserAccount>) => void;
   // Alarm
   currentAlarmTask: EffectiveTask | null;
@@ -208,21 +213,58 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Manual / Auto Trigger Sync
   const triggerSync = useCallback(
-    async (overrideUrl?: string, overrideKey?: string): Promise<{ success: boolean; message?: string }> => {
+    async (
+      overrideUrl?: string,
+      overrideKey?: string,
+      overrideAccount?: Partial<UserAccount>
+    ): Promise<{ success: boolean; message?: string }> => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         return { success: false, message: 'Офлайн режим: изменения сохранены локально.' };
       }
       setIsSyncing(true);
       setSyncStatus('syncing');
       try {
-        const currentData = latestAppDataRef.current;
+        let currentData = latestAppDataRef.current;
+        if (overrideAccount || overrideUrl || overrideKey) {
+          currentData = {
+            ...currentData,
+            account: {
+              ...currentData.account,
+              ...(overrideAccount || {}),
+              ...(overrideUrl ? { supabaseUrl: overrideUrl } : {}),
+              ...(overrideKey ? { supabaseAnonKey: overrideKey } : {}),
+            },
+          };
+          latestAppDataRef.current = currentData;
+          storage.save(currentData);
+        }
+
         const targetUrl = overrideUrl || currentData.account.supabaseUrl;
         const targetKey = overrideKey || currentData.account.supabaseAnonKey;
+
+        if (!targetUrl || !targetKey) {
+          setIsSyncing(false);
+          setSyncStatus('idle');
+          return { success: false, message: 'Укажите Supabase URL и Anon Key' };
+        }
 
         const res = await syncWithCloud(currentData, targetUrl, targetKey);
         if (res.success && res.data) {
           isUserMutationRef.current = false;
-          setAppData(res.data);
+          // Preserve local account keys and settings safely
+          const finalData: AppData = {
+            ...res.data,
+            account: {
+              ...res.data.account,
+              ...currentData.account,
+              supabaseUrl: targetUrl,
+              supabaseAnonKey: targetKey,
+              cloudSyncEnabled: true,
+            },
+          };
+          latestAppDataRef.current = finalData;
+          storage.save(finalData);
+          setAppData(finalData);
           setSyncStatus('synced');
           showToast('Облачная синхронизация выполнена успешно!');
           return { success: true };
@@ -241,7 +283,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [showToast]
   );
 
-  // Cloud Sync: Pull remote changes on visibility change (smartphone screen unlock / browser focus / online)
+  // Cloud Sync: Pull remote changes on mount, visibility change (screen unlock / browser focus / online)
   useEffect(() => {
     if (!appData?.account?.cloudSyncEnabled || !appData?.account?.supabaseUrl || !appData?.account?.supabaseAnonKey) {
       return;
@@ -265,11 +307,24 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           currentData.account.email
         );
         if (res.success && res.data) {
-          setAppData(res.data);
+          const merged = mergeAppData(res.data, currentData);
+          const finalMerged: AppData = {
+            ...merged,
+            account: {
+              ...merged.account,
+              ...currentData.account,
+            },
+          };
+          latestAppDataRef.current = finalMerged;
+          storage.save(finalMerged);
+          setAppData(finalMerged);
           setSyncStatus('synced');
         }
       } catch {}
     };
+
+    // Immediately pull on mount/activation
+    pullRemote();
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
@@ -285,8 +340,8 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     window.addEventListener('online', handleOnline);
     document.addEventListener('visibilitychange', handleVisibility);
 
-    // Periodic pull every 12 seconds when online
-    const interval = setInterval(pullRemote, 12000);
+    // Periodic pull every 10 seconds when online
+    const interval = setInterval(pullRemote, 10000);
 
     return () => {
       window.removeEventListener('focus', pullRemote);
@@ -295,6 +350,22 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       clearInterval(interval);
     };
   }, [appData?.account?.cloudSyncEnabled, appData?.account?.supabaseUrl, appData?.account?.supabaseAnonKey, appData?.account?.email, isSyncing, triggerSync]);
+
+  // Startup initial sync trigger
+  const startupSyncDoneRef = useRef(false);
+  useEffect(() => {
+    if (startupSyncDoneRef.current) return;
+    if (
+      appData?.account?.cloudSyncEnabled &&
+      appData?.account?.supabaseUrl &&
+      appData?.account?.supabaseAnonKey &&
+      typeof navigator !== 'undefined' &&
+      navigator.onLine
+    ) {
+      startupSyncDoneRef.current = true;
+      triggerSync();
+    }
+  }, [appData?.account?.cloudSyncEnabled, appData?.account?.supabaseUrl, appData?.account?.supabaseAnonKey, triggerSync]);
 
   // 1-Click Sync Setup Link listener (e.g. sent from desktop to smartphone via #sync=...)
   useEffect(() => {
@@ -311,24 +382,28 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
             const targetKey = cfg.k.trim();
             const targetEmail = (cfg.e || 'user@planner.app').trim();
 
-            setAppData((prev) => {
-              const updated: AppData = {
-                ...prev,
-                account: {
-                  ...(prev.account || { email: targetEmail, displayName: 'Пользователь', cloudSyncEnabled: true }),
-                  supabaseUrl: targetUrl,
-                  supabaseAnonKey: targetKey,
-                  cloudSyncEnabled: true,
-                  email: targetEmail,
-                },
-              };
-              storage.save(updated);
-              return updated;
-            });
+            const updated: AppData = {
+              ...latestAppDataRef.current,
+              account: {
+                ...(latestAppDataRef.current.account || { email: targetEmail, displayName: 'Пользователь', cloudSyncEnabled: true }),
+                supabaseUrl: targetUrl,
+                supabaseAnonKey: targetKey,
+                cloudSyncEnabled: true,
+                email: targetEmail,
+              },
+            };
+            latestAppDataRef.current = updated;
+            storage.save(updated);
+            setAppData(updated);
 
             showToast('Синхронизация настроена в 1 клик!');
             setTimeout(() => {
-              triggerSync(targetUrl, targetKey);
+              triggerSync(targetUrl, targetKey, {
+                supabaseUrl: targetUrl,
+                supabaseAnonKey: targetKey,
+                cloudSyncEnabled: true,
+                email: targetEmail,
+              });
             }, 300);
           }
         }
@@ -341,13 +416,18 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Update Account
   const updateAccount = useCallback((updates: Partial<UserAccount>) => {
     isUserMutationRef.current = true;
-    setAppData((prev) => ({
-      ...prev,
-      account: {
-        ...prev.account,
-        ...updates,
-      },
-    }));
+    setAppData((prev) => {
+      const updated: AppData = {
+        ...prev,
+        account: {
+          ...prev.account,
+          ...updates,
+        },
+      };
+      latestAppDataRef.current = updated;
+      storage.save(updated);
+      return updated;
+    });
   }, []);
 
   const selectedDateStr = useMemo(() => format(selectedDate, 'yyyy-MM-dd'), [selectedDate]);

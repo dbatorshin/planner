@@ -124,15 +124,17 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
     const cleanUrl = supabaseUrl.trim();
     const cleanKey = supabaseKey.trim();
 
-    updateAccount({
+    const accountUpdates = {
       email: cleanEmail,
       supabaseUrl: cleanUrl,
       supabaseAnonKey: cleanKey,
       cloudSyncEnabled: syncEnabled,
-    });
+    };
+
+    updateAccount(accountUpdates);
 
     if (syncEnabled && cleanUrl && cleanKey) {
-      const res = await triggerSync(cleanUrl, cleanKey);
+      const res = await triggerSync(cleanUrl, cleanKey, accountUpdates);
       if (res.success) {
         haptic.success();
       }
@@ -244,7 +246,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
                 {isSyncing
                   ? 'Синхронизация с облаком...'
                   : isConnected
-                  ? 'Облако подключено и активно'
+                  ? `Облако активно • ${appData.tasks.length} задач`
                   : 'Синхронизация не настроена'}
               </span>
               <span className="text-[11px] font-semibold block" style={{ color: 'var(--sheet-sub)' }}>
@@ -263,7 +265,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
               className="ref-btn-soft px-3 py-1.5 text-xs font-black flex items-center gap-1.5 transition active:scale-95 cursor-pointer shrink-0"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>Обновить</span>
+              <span>Синхронизировать</span>
             </button>
           )}
         </div>
