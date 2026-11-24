@@ -1394,14 +1394,20 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       setAppData((prev) => {
         const targetTask = prev.tasks.find((t) => t.id === taskId);
+        if (!targetTask) return prev;
+
         const newHistory = { ...prev.history };
         const dayLog = newHistory[selectedDateStr];
         if (!dayLog) return prev;
 
-        const override = dayLog.overrides?.[taskId];
-        const effectiveStart = override?.startTime || targetTask?.startTime || '08:00';
-        const effectiveEnd = override?.endTime || targetTask?.endTime || '12:00';
-        const basePlannedDurationMin = getDurationMinutes(effectiveStart, effectiveEnd);
+        const basePlannedDurationMin = getDurationMinutes(targetTask.startTime, targetTask.endTime);
+        const now = Date.now();
+
+        let newOverrides: Record<string, DayTaskOverride> = {
+          ...(dayLog.overrides || {}),
+        };
+        // Clear runtime execution override so task returns to its planned schedule
+        delete newOverrides[taskId];
 
         const newCompleted = (dayLog.completedTaskIds || []).filter((id) => id !== taskId);
         const newCompletedAt = { ...(dayLog.completedAt || {}) };
@@ -1414,11 +1420,40 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           lastStartedTimestamp: null,
           pausedTimestamp: null,
           plannedDurationSeconds: basePlannedDurationMin * 60,
-          updatedAt: Date.now(),
+          updatedAt: now,
         };
+
+        // If another task is currently running or paused, cascade remaining tasks after it
+        const activeTask = prev.tasks.find(
+          (t) => t.id !== taskId && (newProgress[t.id]?.status === 'running' || newProgress[t.id]?.status === 'paused')
+        );
+        if (activeTask) {
+          const actProg = newProgress[activeTask.id];
+          const actCurStart = newOverrides[activeTask.id]?.startTime || activeTask.startTime;
+          const actCurEnd = newOverrides[activeTask.id]?.endTime || activeTask.endTime;
+          const actPlannedSec = actProg?.plannedDurationSeconds || (getDurationMinutes(actCurStart, actCurEnd) * 60);
+          const actWorkedSec = actProg?.workedSeconds || 0;
+          const actRemainingMin = Math.max(1, Math.ceil((actPlannedSec - actWorkedSec) / 60));
+          const actEndTime = actProg?.status === 'running'
+            ? addMinutesToTime(getCurrentTimeString(), actRemainingMin)
+            : actCurEnd;
+
+          newOverrides = cascadeSchedule(
+            prev.tasks,
+            newOverrides,
+            newCompleted,
+            dayLog.excludedTaskIds || [],
+            dayOfWeek,
+            activeTask.id,
+            actEndTime,
+            actCurStart,
+            newProgress
+          );
+        }
 
         newHistory[selectedDateStr] = {
           ...dayLog,
+          overrides: newOverrides,
           completedTaskIds: newCompleted,
           completedAt: newCompletedAt,
           progress: newProgress,
@@ -1430,7 +1465,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       firedAlarmsRef.current.delete(taskId);
       showToast('Задача возвращена в план');
     },
-    [selectedDateStr, showToast]
+    [selectedDateStr, dayOfWeek, showToast]
   );
 
   // DELETE TASK PERMANENTLY
@@ -1438,6 +1473,11 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     (taskId: string) => {
       haptic.medium();
       isUserMutationRef.current = true;
+
+      if (currentAlarmTask?.id === taskId) {
+        setCurrentAlarmTask(null);
+      }
+      firedAlarmsRef.current.delete(taskId);
 
       setAppData((prev) => {
         const filteredTasks = prev.tasks.filter((t) => t.id !== taskId);
@@ -1486,6 +1526,11 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     (taskId: string) => {
       haptic.medium();
       isUserMutationRef.current = true;
+
+      if (currentAlarmTask?.id === taskId) {
+        setCurrentAlarmTask(null);
+      }
+      firedAlarmsRef.current.delete(taskId);
       setAppData((prev) => {
         const newHistory = { ...prev.history };
         const dayLog = newHistory[selectedDateStr] || {

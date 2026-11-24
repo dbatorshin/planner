@@ -433,4 +433,151 @@ describe('Cloud Sync LWW Merge and Override Retention', () => {
     // Obsolete local override MUST NOT be resurrected!
     expect(merged.history[dateStr].overrides?.['task-music']).toBeUndefined();
   });
+
+  it('cascades cleanly when restoring a completed task while another task is running', () => {
+    // Coding is running: 14:00 to 18:00 (4 hours)
+    // Music was previously completed and now restored to plan
+    // Sport is also pending
+    const baseTasksLocal: TaskTemplate[] = [
+      {
+        id: 'task-coding',
+        title: 'Кодинг',
+        startTime: '09:00',
+        endTime: '13:00',
+        category: 'Работа',
+        color: '#eab308',
+        daysOfWeek: [1, 2, 3, 4, 5],
+        order: 0,
+        alarmEnabled: true,
+        createdAt: '2026-11-20T10:00:00Z',
+      },
+      {
+        id: 'task-music',
+        title: 'Музыка',
+        startTime: '13:00',
+        endTime: '15:00', // 2 hours
+        category: 'Хобби',
+        color: '#3b82f6',
+        daysOfWeek: [1, 2, 3, 4, 5],
+        order: 1,
+        alarmEnabled: true,
+        createdAt: '2026-11-20T10:00:00Z',
+      },
+      {
+        id: 'task-sport',
+        title: 'Спорт',
+        startTime: '15:00',
+        endTime: '16:00', // 1 hour
+        category: 'Здоровье',
+        color: '#10b981',
+        daysOfWeek: [1, 2, 3, 4, 5],
+        order: 2,
+        alarmEnabled: true,
+        createdAt: '2026-11-20T10:00:00Z',
+      },
+    ];
+
+    const currentOverrides: Record<string, DayTaskOverride> = {
+      'task-coding': { startTime: '14:00', endTime: '18:00' },
+      // task-music override deleted upon restore
+    };
+
+    const progress: Record<string, TaskProgressState> = {
+      'task-coding': {
+        status: 'running',
+        workedSeconds: 0,
+        lastStartedTimestamp: Date.now(),
+        pausedTimestamp: null,
+        plannedDurationSeconds: 14400,
+        updatedAt: Date.now(),
+      },
+      'task-music': {
+        status: 'idle',
+        workedSeconds: 0,
+        lastStartedTimestamp: null,
+        pausedTimestamp: null,
+        plannedDurationSeconds: 7200,
+        updatedAt: Date.now(),
+      },
+    };
+
+    const cascaded = cascadeSchedule(
+      baseTasksLocal,
+      currentOverrides,
+      [], // music is no longer in completedTaskIds
+      [],
+      1,
+      'task-coding',
+      '18:00',
+      '14:00',
+      progress
+    );
+
+    // Restored task-music should be scheduled right after coding at 18:00 to 20:00
+    expect(cascaded['task-music']).toEqual({ startTime: '18:00', endTime: '20:00' });
+    // Sport should follow at 20:00 to 21:00
+    expect(cascaded['task-sport']).toEqual({ startTime: '20:00', endTime: '21:00' });
+  });
+
+  it('excludes skipped tasks from cascade schedule', () => {
+    const baseTasksLocal: TaskTemplate[] = [
+      {
+        id: 'task-coding',
+        title: 'Кодинг',
+        startTime: '09:00',
+        endTime: '13:00',
+        category: 'Работа',
+        color: '#eab308',
+        daysOfWeek: [1, 2, 3, 4, 5],
+        order: 0,
+        alarmEnabled: true,
+        createdAt: '2026-11-20T10:00:00Z',
+      },
+      {
+        id: 'task-music',
+        title: 'Музыка',
+        startTime: '13:00',
+        endTime: '15:00',
+        category: 'Хобби',
+        color: '#3b82f6',
+        daysOfWeek: [1, 2, 3, 4, 5],
+        order: 1,
+        alarmEnabled: true,
+        createdAt: '2026-11-20T10:00:00Z',
+      },
+      {
+        id: 'task-sport',
+        title: 'Спорт',
+        startTime: '15:00',
+        endTime: '16:00',
+        category: 'Здоровье',
+        color: '#10b981',
+        daysOfWeek: [1, 2, 3, 4, 5],
+        order: 2,
+        alarmEnabled: true,
+        createdAt: '2026-11-20T10:00:00Z',
+      },
+    ];
+
+    const currentOverrides: Record<string, DayTaskOverride> = {
+      'task-coding': { startTime: '14:00', endTime: '18:00' },
+    };
+
+    // Music is skipped for today in excludedTaskIds
+    const cascaded = cascadeSchedule(
+      baseTasksLocal,
+      currentOverrides,
+      [],
+      ['task-music'],
+      1,
+      'task-coding',
+      '18:00',
+      '14:00'
+    );
+
+    // Music should NOT be in cascaded overrides
+    expect(cascaded['task-music']).toBeUndefined();
+    // Sport should jump straight after coding: 18:00 to 19:00
+    expect(cascaded['task-sport']).toEqual({ startTime: '18:00', endTime: '19:00' });
+  });
 });
