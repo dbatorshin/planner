@@ -121,7 +121,8 @@ export function cascadeSchedule(
   dayOfWeek: DayOfWeek,
   anchorTaskId: string,
   anchorEndTime: string,
-  anchorStartTime?: string
+  anchorStartTime?: string,
+  progress?: Record<string, TaskProgressState>
 ): Record<string, DayTaskOverride> {
   const newOverrides: Record<string, DayTaskOverride> = { ...overrides };
   const anchorEndMin = timeToMinutes(anchorEndTime);
@@ -147,21 +148,34 @@ export function cascadeSchedule(
 
   for (const t of otherTasks) {
     const ov = newOverrides[t.id];
+    const prog = progress?.[t.id];
     const curStart = ov?.startTime || t.startTime;
     const curEnd = ov?.endTime || t.endTime;
-    const curDur = getDurationMinutes(curStart, curEnd);
+    const baseDurMin = getDurationMinutes(t.startTime, t.endTime);
+    const scheduledDurMin = getDurationMinutes(curStart, curEnd);
+
+    // If task has progress, use its planned and worked seconds to determine required remaining time
+    const plannedSec = prog?.plannedDurationSeconds || (scheduledDurMin * 60) || (baseDurMin * 60);
+    const workedSec = prog?.workedSeconds || 0;
+    const remainingSec = Math.max(0, plannedSec - workedSec);
+    const remainingMin = Math.max(1, Math.ceil(remainingSec / 60));
+    const workedMin = Math.floor(workedSec / 60);
+
     const templateStartMin = timeToMinutes(t.startTime);
 
-    // If template start was earlier than or equal to runningEndMin, queue it directly after runningEndMin.
-    // If template start was originally planned much later (e.g. 18:00), keep the later time unless pushed.
-    const newStartMin = Math.max(runningEndMin, templateStartMin);
-    const newEndMin = newStartMin + curDur;
+    // Earliest time the remaining portion of this task can start
+    const startOfRemainingMin = Math.max(runningEndMin, templateStartMin);
+    const finishMin = startOfRemainingMin + remainingMin;
+
+    // Full scheduled window encompasses worked time plus remaining time so total window equals planned duration
+    const newStartMin = startOfRemainingMin - workedMin;
+    const newEndMin = finishMin;
 
     newOverrides[t.id] = {
       startTime: minutesToTime(newStartMin, false),
       endTime: minutesToTime(newEndMin, false),
     };
-    runningEndMin = newEndMin;
+    runningEndMin = finishMin;
   }
 
   return newOverrides;
@@ -371,17 +385,25 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           currentData.account.supabaseAnonKey,
           currentData.account.email
         );
+
+        // Guard: If a user mutation happened while the fetch was in flight, do NOT overwrite with stale data
+        if (isUserMutationRef.current) {
+          triggerSync();
+          return;
+        }
+
         if (res.success && res.data) {
-          const merged = mergeAppData(res.data, currentData);
+          const freshCurrentData = latestAppDataRef.current;
+          const merged = mergeAppData(res.data, freshCurrentData);
           const finalMerged: AppData = {
             ...merged,
             account: {
               ...merged.account,
-              ...currentData.account,
+              ...freshCurrentData.account,
             },
           };
           // Only update local state if remote data actually contains new changes
-          if (JSON.stringify(currentData) !== JSON.stringify(finalMerged)) {
+          if (JSON.stringify(freshCurrentData) !== JSON.stringify(finalMerged)) {
             latestAppDataRef.current = finalMerged;
             storage.save(finalMerged);
             setAppData(finalMerged);
@@ -1049,7 +1071,8 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           dayOfWeek,
           taskId,
           newEndTime,
-          newStartTime
+          newStartTime,
+          newProgress
         );
 
         newHistory[selectedDateStr] = {
@@ -1202,7 +1225,8 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           dayOfWeek,
           taskId,
           newEndTime,
-          newStartTime
+          newStartTime,
+          newProgress
         );
 
         newHistory[selectedDateStr] = {
@@ -1237,10 +1261,14 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           progress: {},
         };
 
-        const currentStart = dayLog.overrides?.[taskId]?.startTime || targetTask.startTime;
-        const currentEnd = dayLog.overrides?.[taskId]?.endTime || targetTask.endTime;
-        const plannedDurationMin = getDurationMinutes(currentStart, currentEnd);
         const now = Date.now();
+        const baseDurationMin = getDurationMinutes(targetTask.startTime, targetTask.endTime);
+
+        let newOverrides: Record<string, DayTaskOverride> = {
+          ...(dayLog.overrides || {}),
+        };
+        // Clear runtime execution override so task returns to its planned schedule
+        delete newOverrides[taskId];
 
         const newProgress: Record<string, TaskProgressState> = {
           ...(dayLog.progress || {}),
@@ -1249,7 +1277,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
             workedSeconds: 0,
             lastStartedTimestamp: null,
             pausedTimestamp: null,
-            plannedDurationSeconds: plannedDurationMin * 60,
+            plannedDurationSeconds: baseDurationMin * 60,
             updatedAt: now,
           },
         };
@@ -1258,8 +1286,37 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const newCompletedAt = { ...(dayLog.completedAt || {}) };
         delete newCompletedAt[taskId];
 
+        // If another task is currently running or paused, cascade remaining tasks after it
+        const activeTask = prev.tasks.find(
+          (t) => t.id !== taskId && (newProgress[t.id]?.status === 'running' || newProgress[t.id]?.status === 'paused')
+        );
+        if (activeTask) {
+          const actProg = newProgress[activeTask.id];
+          const actCurStart = newOverrides[activeTask.id]?.startTime || activeTask.startTime;
+          const actCurEnd = newOverrides[activeTask.id]?.endTime || activeTask.endTime;
+          const actPlannedSec = actProg?.plannedDurationSeconds || (getDurationMinutes(actCurStart, actCurEnd) * 60);
+          const actWorkedSec = actProg?.workedSeconds || 0;
+          const actRemainingMin = Math.max(1, Math.ceil((actPlannedSec - actWorkedSec) / 60));
+          const actEndTime = actProg?.status === 'running'
+            ? addMinutesToTime(getCurrentTimeString(), actRemainingMin)
+            : actCurEnd;
+
+          newOverrides = cascadeSchedule(
+            prev.tasks,
+            newOverrides,
+            newCompleted,
+            dayLog.excludedTaskIds || [],
+            dayOfWeek,
+            activeTask.id,
+            actEndTime,
+            actCurStart,
+            newProgress
+          );
+        }
+
         newHistory[selectedDateStr] = {
           ...dayLog,
+          overrides: newOverrides,
           completedTaskIds: newCompleted,
           completedAt: newCompletedAt,
           progress: newProgress,
@@ -1271,7 +1328,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       firedAlarmsRef.current.delete(taskId);
       showToast('Таймер сброшен к началу');
     },
-    [selectedDateStr, showToast]
+    [selectedDateStr, dayOfWeek, showToast]
   );
 
   // COMPLETE TASK

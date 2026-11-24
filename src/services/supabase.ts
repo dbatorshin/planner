@@ -170,14 +170,44 @@ export function mergeAppData(remote: AppData, local: AppData): AppData {
       ...(lLog.excludedTaskIds || []),
     ]);
 
+    // Merge day overrides with LWW awareness so reset tasks do not have obsolete overrides resurrected
+    const mergedOverrides: Record<string, import('../types').DayTaskOverride> = {};
+    const allOverrideTaskIds = new Set([
+      ...Object.keys(rLog.overrides || {}),
+      ...Object.keys(lLog.overrides || {}),
+    ]);
+
+    allOverrideTaskIds.forEach((taskId) => {
+      const lOv = lLog.overrides?.[taskId];
+      const rOv = rLog.overrides?.[taskId];
+      const lProg = lLog.progress?.[taskId];
+      const rProg = rLog.progress?.[taskId];
+      const tLocal = getProgressTimestamp(lProg);
+      const tRemote = getProgressTimestamp(rProg);
+
+      // If local explicitly reset this task to idle more recently than remote, do not resurrect remote override
+      if (tLocal > tRemote && lProg?.status === 'idle') {
+        if (lOv) {
+          mergedOverrides[taskId] = lOv;
+        }
+      } else if (tRemote > tLocal && rProg?.status === 'idle') {
+        if (rOv) {
+          mergedOverrides[taskId] = rOv;
+        }
+      } else if (tLocal >= tRemote) {
+        if (lOv) mergedOverrides[taskId] = lOv;
+        else if (rOv) mergedOverrides[taskId] = rOv;
+      } else {
+        if (rOv) mergedOverrides[taskId] = rOv;
+        else if (lOv) mergedOverrides[taskId] = lOv;
+      }
+    });
+
     mergedHistory[dateStr] = {
       completedTaskIds: Array.from(mergedCompletedTaskIdsSet).filter((id) => !allDeletedTaskIds.has(id)),
       excludedTaskIds: Array.from(allExcluded).filter((id) => !allDeletedTaskIds.has(id)),
       completedAt: mergedCompletedAt,
-      overrides: {
-        ...(rLog.overrides || {}),
-        ...(lLog.overrides || {}),
-      },
+      overrides: mergedOverrides,
       progress: mergedProgress,
     };
   });
