@@ -244,17 +244,30 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return false;
 }
 
+const lastNotificationTimeMap = new Map<string, number>();
+
 /**
- * Triggers a desktop/OS push notification if allowed
+ * Triggers a desktop/OS push notification if allowed with tag deduplication and spam throttle
  */
 export function sendSystemNotification(title: string, options?: NotificationOptions) {
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission === 'granted') {
     try {
+      const tag = options?.tag || title;
+      const now = Date.now();
+      const lastSent = lastNotificationTimeMap.get(tag) || 0;
+      // Throttle identical notifications to at most once per 60 seconds
+      if (now - lastSent < 60000) {
+        return;
+      }
+      lastNotificationTimeMap.set(tag, now);
+
       new Notification(title, {
         icon: './icon-192.png',
         badge: './favicon.svg',
+        tag,
         ...options,
+        ...({ renotify: false } as any),
       });
     } catch (e) {
       console.warn('Could not display system notification:', e);

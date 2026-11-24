@@ -705,21 +705,56 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Alarm monitor: Check if any running task reached remainingSeconds === 0
   useEffect(() => {
-    if (!isCurrentToday || !appData.settings.soundEnabled) return;
+    if (!isCurrentToday) return;
 
     for (const task of activeTasks) {
       if (task.status === 'running' && task.remainingSeconds <= 0) {
-        if (!firedAlarmsRef.current.has(task.id)) {
+        const prog = currentDayLog.progress?.[task.id];
+        if (!firedAlarmsRef.current.has(task.id) && !prog?.alarmFired) {
           firedAlarmsRef.current.add(task.id);
           setCurrentAlarmTask(task);
-          sound.playTaskFinishedAlarm(appData.settings.selectedSoundTrack || 'june_songbirds');
+          if (appData.settings.soundEnabled) {
+            sound.playTaskFinishedAlarm(appData.settings.selectedSoundTrack || 'june_songbirds');
+          }
           sendSystemNotification(`Время вышло: «${task.title}»`, {
             body: `Запланированное время ${formatDuration(task.basePlannedDurationMinutes)} полностью отработано!`,
+            tag: `task_alarm_${task.id}`,
+          });
+
+          // Freeze task in progress state so it ceases ticking past zero and preserves alarmFired flag
+          setAppData((prev) => {
+            const dayLog = prev.history[selectedDateStr];
+            if (!dayLog) return prev;
+            const curProg = dayLog.progress?.[task.id];
+            if (!curProg || curProg.status !== 'running') return prev;
+
+            const nowMs = Date.now();
+            return {
+              ...prev,
+              history: {
+                ...prev.history,
+                [selectedDateStr]: {
+                  ...dayLog,
+                  progress: {
+                    ...(dayLog.progress || {}),
+                    [task.id]: {
+                      ...curProg,
+                      status: 'paused',
+                      workedSeconds: curProg.plannedDurationSeconds,
+                      lastStartedTimestamp: null,
+                      pausedTimestamp: nowMs,
+                      alarmFired: true,
+                      updatedAt: nowMs,
+                    },
+                  },
+                },
+              },
+            };
           });
         }
       }
     }
-  }, [activeTasks, isCurrentToday, appData.settings.soundEnabled, appData.settings.selectedSoundTrack]);
+  }, [activeTasks, currentDayLog.progress, isCurrentToday, selectedDateStr, appData.settings.soundEnabled, appData.settings.selectedSoundTrack]);
 
   const goToToday = useCallback(() => {
     haptic.light();
@@ -1059,6 +1094,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           lastStartedTimestamp: now,
           pausedTimestamp: null,
           plannedDurationSeconds: plannedSec,
+          alarmFired: false,
           updatedAt: now,
         };
 
@@ -1213,6 +1249,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           lastStartedTimestamp: now,
           pausedTimestamp: null,
           plannedDurationSeconds: plannedSec,
+          alarmFired: false,
           updatedAt: now,
         };
 
@@ -1278,6 +1315,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
             lastStartedTimestamp: null,
             pausedTimestamp: null,
             plannedDurationSeconds: baseDurationMin * 60,
+            alarmFired: false,
             updatedAt: now,
           },
         };
@@ -1420,6 +1458,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           lastStartedTimestamp: null,
           pausedTimestamp: null,
           plannedDurationSeconds: basePlannedDurationMin * 60,
+          alarmFired: false,
           updatedAt: now,
         };
 
