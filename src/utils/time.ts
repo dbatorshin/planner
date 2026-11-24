@@ -28,11 +28,11 @@ export function minutesToTime(minutes: number, clampDay: boolean = true): string
 }
 
 /**
- * Adds delta minutes to "HH:mm" string
+ * Adds delta minutes to "HH:mm" string (wraps cleanly around 24 hours)
  */
 export function addMinutesToTime(timeStr: string, deltaMinutes: number): string {
   const current = timeToMinutes(timeStr);
-  return minutesToTime(current + deltaMinutes);
+  return minutesToTime(current + deltaMinutes, false);
 }
 
 /**

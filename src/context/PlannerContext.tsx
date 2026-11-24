@@ -106,6 +106,67 @@ interface PlannerContextType {
 
 const PlannerContext = createContext<PlannerContextType | undefined>(undefined);
 
+/**
+ * Automatically cascades subsequent scheduled tasks chronologically so that:
+ * 1. No tasks overlap or conflict.
+ * 2. Paused and pending tasks are queued seamlessly after the active task finishes.
+ * 3. Later tasks (e.g. evening tasks) keep their planned schedule unless pushed forward.
+ * 4. Overnight / midnight crossing tasks wrap cleanly without clamping to 23:59.
+ */
+export function cascadeSchedule(
+  tasks: TaskTemplate[],
+  overrides: Record<string, DayTaskOverride>,
+  completedTaskIds: string[],
+  excludedTaskIds: string[],
+  dayOfWeek: DayOfWeek,
+  anchorTaskId: string,
+  anchorEndTime: string,
+  anchorStartTime?: string
+): Record<string, DayTaskOverride> {
+  const newOverrides: Record<string, DayTaskOverride> = { ...overrides };
+  const anchorEndMin = timeToMinutes(anchorEndTime);
+  const anchorStartMin = anchorStartTime ? timeToMinutes(anchorStartTime) : anchorEndMin;
+
+  // If anchor task ends past midnight, chronological end on today's timeline is 1440 + anchorEndMin
+  let runningEndMin = anchorEndMin < anchorStartMin ? 1440 + anchorEndMin : anchorEndMin;
+
+  // All other tasks for today that are not completed, not excluded, and not the anchor task
+  const otherTasks = tasks.filter(
+    (t) =>
+      t.id !== anchorTaskId &&
+      t.daysOfWeek.includes(dayOfWeek) &&
+      !completedTaskIds.includes(t.id) &&
+      !excludedTaskIds.includes(t.id)
+  );
+
+  // Sort by template start time to preserve the user's intended chronological order
+  otherTasks.sort((a, b) => {
+    const diff = timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
+    return diff !== 0 ? diff : (a.order || 0) - (b.order || 0);
+  });
+
+  for (const t of otherTasks) {
+    const ov = newOverrides[t.id];
+    const curStart = ov?.startTime || t.startTime;
+    const curEnd = ov?.endTime || t.endTime;
+    const curDur = getDurationMinutes(curStart, curEnd);
+    const templateStartMin = timeToMinutes(t.startTime);
+
+    // If template start was earlier than or equal to runningEndMin, queue it directly after runningEndMin.
+    // If template start was originally planned much later (e.g. 18:00), keep the later time unless pushed.
+    const newStartMin = Math.max(runningEndMin, templateStartMin);
+    const newEndMin = newStartMin + curDur;
+
+    newOverrides[t.id] = {
+      startTime: minutesToTime(newStartMin, false),
+      endTime: minutesToTime(newEndMin, false),
+    };
+    runningEndMin = newEndMin;
+  }
+
+  return newOverrides;
+}
+
 export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [appData, setAppData] = useState<AppData>(() => storage.load());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -897,62 +958,6 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [selectedDateStr, dayOfWeek, showToast]
   );
 
-  // START TASK: Automatic sync with reality!
-/**
- * Automatically cascades subsequent scheduled tasks chronologically so that:
- * 1. No tasks overlap or conflict.
- * 2. Paused and pending tasks are queued seamlessly after the active task finishes.
- * 3. Later tasks (e.g. evening tasks) keep their planned schedule unless pushed forward.
- */
-function cascadeSchedule(
-  tasks: TaskTemplate[],
-  overrides: Record<string, DayTaskOverride>,
-  completedTaskIds: string[],
-  excludedTaskIds: string[],
-  dayOfWeek: DayOfWeek,
-  anchorTaskId: string,
-  anchorEndTime: string
-): Record<string, DayTaskOverride> {
-  const newOverrides: Record<string, DayTaskOverride> = { ...overrides };
-  let runningEndMin = timeToMinutes(anchorEndTime);
-
-  // All other tasks for today that are not completed, not excluded, and not the anchor task
-  const otherTasks = tasks.filter(
-    (t) =>
-      t.id !== anchorTaskId &&
-      t.daysOfWeek.includes(dayOfWeek) &&
-      !completedTaskIds.includes(t.id) &&
-      !excludedTaskIds.includes(t.id)
-  );
-
-  // Sort by template start time to preserve the user's intended chronological order
-  otherTasks.sort((a, b) => {
-    const diff = timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
-    return diff !== 0 ? diff : (a.order || 0) - (b.order || 0);
-  });
-
-  for (const t of otherTasks) {
-    const ov = newOverrides[t.id];
-    const curStart = ov?.startTime || t.startTime;
-    const curEnd = ov?.endTime || t.endTime;
-    const curDur = getDurationMinutes(curStart, curEnd);
-    const templateStartMin = timeToMinutes(t.startTime);
-
-    // If template start was earlier than or equal to runningEndMin, queue it directly after runningEndMin.
-    // If template start was originally planned much later (e.g. 18:00), keep the later time unless pushed.
-    const newStartMin = Math.max(runningEndMin, templateStartMin);
-    const newEndMin = newStartMin + curDur;
-
-    newOverrides[t.id] = {
-      startTime: minutesToTime(newStartMin),
-      endTime: minutesToTime(newEndMin),
-    };
-    runningEndMin = newEndMin;
-  }
-
-  return newOverrides;
-}
-
   // START TASK: Snaps start time to right now and cascades subsequent tasks without conflicts
   const startTask = useCallback(
     (taskId: string) => {
@@ -1043,7 +1048,8 @@ function cascadeSchedule(
           dayLog.excludedTaskIds || [],
           dayOfWeek,
           taskId,
-          newEndTime
+          newEndTime,
+          newStartTime
         );
 
         newHistory[selectedDateStr] = {
@@ -1195,7 +1201,8 @@ function cascadeSchedule(
           dayLog.excludedTaskIds || [],
           dayOfWeek,
           taskId,
-          newEndTime
+          newEndTime,
+          newStartTime
         );
 
         newHistory[selectedDateStr] = {
