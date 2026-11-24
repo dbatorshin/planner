@@ -516,23 +516,6 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         workedSeconds = 0;
       }
 
-      // If viewing today, synchronize workedSeconds so it cannot exceed the real-world
-      // elapsed time since the scheduled start time
-      if (isCurrentToday && (status === 'running' || status === 'paused')) {
-        const realNowMin = timeToMinutes(getCurrentTimeString());
-        const startMin = timeToMinutes(effectiveStartTime);
-        if (startMin <= realNowMin) {
-          const maxElapsedSec = (realNowMin - startMin) * 60;
-          if (workedSeconds > maxElapsedSec) {
-            workedSeconds = maxElapsedSec;
-          }
-        } else {
-          // Scheduled in the future today
-          workedSeconds = 0;
-          status = 'idle';
-        }
-      }
-
       // Worked seconds cannot exceed planned duration
       if (workedSeconds > plannedDurationSeconds) {
         workedSeconds = plannedDurationSeconds;
@@ -915,6 +898,62 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
   );
 
   // START TASK: Automatic sync with reality!
+/**
+ * Automatically cascades subsequent scheduled tasks chronologically so that:
+ * 1. No tasks overlap or conflict.
+ * 2. Paused and pending tasks are queued seamlessly after the active task finishes.
+ * 3. Later tasks (e.g. evening tasks) keep their planned schedule unless pushed forward.
+ */
+function cascadeSchedule(
+  tasks: TaskTemplate[],
+  overrides: Record<string, DayTaskOverride>,
+  completedTaskIds: string[],
+  excludedTaskIds: string[],
+  dayOfWeek: DayOfWeek,
+  anchorTaskId: string,
+  anchorEndTime: string
+): Record<string, DayTaskOverride> {
+  const newOverrides: Record<string, DayTaskOverride> = { ...overrides };
+  let runningEndMin = timeToMinutes(anchorEndTime);
+
+  // All other tasks for today that are not completed, not excluded, and not the anchor task
+  const otherTasks = tasks.filter(
+    (t) =>
+      t.id !== anchorTaskId &&
+      t.daysOfWeek.includes(dayOfWeek) &&
+      !completedTaskIds.includes(t.id) &&
+      !excludedTaskIds.includes(t.id)
+  );
+
+  // Sort by template start time to preserve the user's intended chronological order
+  otherTasks.sort((a, b) => {
+    const diff = timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
+    return diff !== 0 ? diff : (a.order || 0) - (b.order || 0);
+  });
+
+  for (const t of otherTasks) {
+    const ov = newOverrides[t.id];
+    const curStart = ov?.startTime || t.startTime;
+    const curEnd = ov?.endTime || t.endTime;
+    const curDur = getDurationMinutes(curStart, curEnd);
+    const templateStartMin = timeToMinutes(t.startTime);
+
+    // If template start was earlier than or equal to runningEndMin, queue it directly after runningEndMin.
+    // If template start was originally planned much later (e.g. 18:00), keep the later time unless pushed.
+    const newStartMin = Math.max(runningEndMin, templateStartMin);
+    const newEndMin = newStartMin + curDur;
+
+    newOverrides[t.id] = {
+      startTime: minutesToTime(newStartMin),
+      endTime: minutesToTime(newEndMin),
+    };
+    runningEndMin = newEndMin;
+  }
+
+  return newOverrides;
+}
+
+  // START TASK: Snaps start time to right now and cascades subsequent tasks without conflicts
   const startTask = useCallback(
     (taskId: string) => {
       sound.playClick('start');
@@ -938,7 +977,6 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const currentScheduledEnd =
           dayLog.overrides?.[taskId]?.endTime || targetTask.endTime;
 
-        // Current scheduled duration for this task today
         const scheduledDurationMin = getDurationMinutes(
           currentScheduledStart,
           currentScheduledEnd
@@ -946,56 +984,26 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const scheduledDurationSec = scheduledDurationMin * 60;
 
         const realNowStr = getCurrentTimeString();
-        const oldStartMin = timeToMinutes(currentScheduledStart);
-        const nowMin = timeToMinutes(realNowStr);
-        const deltaMinutes = nowMin - oldStartMin;
+        const now = Date.now();
+        const existingProgress = dayLog.progress?.[taskId];
 
-        const newOverrides: Record<string, DayTaskOverride> = {
+        const plannedSec = existingProgress?.plannedDurationSeconds || scheduledDurationSec;
+        const workedSec = existingProgress?.workedSeconds || 0;
+        const remainingSec = Math.max(0, plannedSec - workedSec);
+        const remainingMin = Math.max(1, Math.ceil(remainingSec / 60));
+        const workedMin = Math.floor(workedSec / 60);
+
+        const newEndTime = addMinutesToTime(realNowStr, remainingMin);
+        const newStartTime = addMinutesToTime(realNowStr, -workedMin);
+
+        let newOverrides: Record<string, DayTaskOverride> = {
           ...(dayLog.overrides || {}),
-        };
-
-        // If starting at a different time, snap start to now and preserve planned duration
-        let newStartTime = currentScheduledStart;
-        let newEndTime = currentScheduledEnd;
-
-        if (deltaMinutes !== 0) {
-          newStartTime = realNowStr;
-          newEndTime = addMinutesToTime(realNowStr, scheduledDurationMin);
-          newOverrides[taskId] = {
+          [taskId]: {
             startTime: newStartTime,
             endTime: newEndTime,
-          };
+          },
+        };
 
-          // Auto-shift all subsequent tasks scheduled today by the same delta
-          // Exclude completed, running, or already paused tasks to preserve their progress
-          const otherTasks = prev.tasks
-            .filter((t) => {
-              if (t.id === taskId) return false;
-              if (!t.daysOfWeek.includes(dayOfWeek)) return false;
-              if (dayLog.completedTaskIds?.includes(t.id)) return false;
-              const otherStatus = dayLog.progress?.[t.id]?.status;
-              if (otherStatus === 'running' || otherStatus === 'paused') return false;
-              return true;
-            })
-            .map((t) => {
-              const ov = newOverrides[t.id];
-              return {
-                id: t.id,
-                origStart: timeToMinutes(ov?.startTime || t.startTime),
-                origEnd: timeToMinutes(ov?.endTime || t.endTime),
-              };
-            })
-            .filter((t) => t.origStart >= oldStartMin);
-
-          for (const sub of otherTasks) {
-            newOverrides[sub.id] = {
-              startTime: minutesToTime(sub.origStart + deltaMinutes),
-              endTime: minutesToTime(sub.origEnd + deltaMinutes),
-            };
-          }
-        }
-
-        const now = Date.now();
         const newProgress: Record<string, TaskProgressState> = {
           ...(dayLog.progress || {}),
         };
@@ -1018,17 +1026,25 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           }
         }
 
-        const existingProgress = newProgress[taskId];
         newProgress[taskId] = {
           status: 'running',
-          workedSeconds: existingProgress?.workedSeconds || 0,
+          workedSeconds: workedSec,
           lastStartedTimestamp: now,
           pausedTimestamp: null,
-          plannedDurationSeconds: existingProgress?.plannedDurationSeconds
-            ? Math.min(existingProgress.plannedDurationSeconds, scheduledDurationSec)
-            : scheduledDurationSec,
+          plannedDurationSeconds: plannedSec,
           updatedAt: now,
         };
+
+        // Cascade all other non-completed tasks to guarantee sequential execution without overlaps
+        newOverrides = cascadeSchedule(
+          prev.tasks,
+          newOverrides,
+          dayLog.completedTaskIds || [],
+          dayLog.excludedTaskIds || [],
+          dayOfWeek,
+          taskId,
+          newEndTime
+        );
 
         newHistory[selectedDateStr] = {
           ...dayLog,
@@ -1093,7 +1109,7 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [selectedDateStr, showToast]
   );
 
-  // RESUME TASK: Resumes countdown and automatically extends end time & shifts all subsequent tasks by pause duration!
+  // RESUME TASK: Resumes countdown, adjusts finish time and cascades subsequent tasks without conflicts
   const resumeTask = useCallback(
     (taskId: string) => {
       sound.playClick('resume');
@@ -1113,51 +1129,31 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         };
 
         const prog = dayLog.progress?.[taskId];
-        if (!prog || prog.status !== 'paused' || !prog.pausedTimestamp) return prev;
+        if (!prog || prog.status !== 'paused') return prev;
 
+        const realNowStr = getCurrentTimeString();
         const now = Date.now();
-        const pauseSeconds = Math.max(1, (now - prog.pausedTimestamp) / 1000);
-        const pauseMinutes = Math.max(1, Math.round(pauseSeconds / 60));
 
         const curStart = dayLog.overrides?.[taskId]?.startTime || targetTask.startTime;
         const curEnd = dayLog.overrides?.[taskId]?.endTime || targetTask.endTime;
-        const newEnd = addMinutesToTime(curEnd, pauseMinutes);
+        const scheduledDurationSec = getDurationMinutes(curStart, curEnd) * 60;
 
-        const newOverrides: Record<string, DayTaskOverride> = {
+        const plannedSec = prog.plannedDurationSeconds || scheduledDurationSec;
+        const workedSec = prog.workedSeconds || 0;
+        const remainingSec = Math.max(0, plannedSec - workedSec);
+        const remainingMin = Math.max(1, Math.ceil(remainingSec / 60));
+        const workedMin = Math.floor(workedSec / 60);
+
+        const newEndTime = addMinutesToTime(realNowStr, remainingMin);
+        const newStartTime = addMinutesToTime(realNowStr, -workedMin);
+
+        let newOverrides: Record<string, DayTaskOverride> = {
           ...(dayLog.overrides || {}),
           [taskId]: {
-            startTime: curStart,
-            endTime: newEnd,
+            startTime: newStartTime,
+            endTime: newEndTime,
           },
         };
-
-        // Shift subsequent tasks by pause minutes (excluding completed or already running/paused tasks)
-        const oldEndMin = timeToMinutes(curEnd);
-        const subsequent = prev.tasks
-          .filter((t) => {
-            if (t.id === taskId) return false;
-            if (!t.daysOfWeek.includes(dayOfWeek)) return false;
-            if (dayLog.completedTaskIds?.includes(t.id)) return false;
-            const otherStatus = dayLog.progress?.[t.id]?.status;
-            if (otherStatus === 'running' || otherStatus === 'paused') return false;
-            return true;
-          })
-          .map((t) => {
-            const ov = newOverrides[t.id];
-            return {
-              id: t.id,
-              origStart: timeToMinutes(ov?.startTime || t.startTime),
-              origEnd: timeToMinutes(ov?.endTime || t.endTime),
-            };
-          })
-          .filter((t) => t.origStart >= oldEndMin);
-
-        for (const sub of subsequent) {
-          newOverrides[sub.id] = {
-            startTime: minutesToTime(sub.origStart + pauseMinutes),
-            endTime: minutesToTime(sub.origEnd + pauseMinutes),
-          };
-        }
 
         const newProgress: Record<string, TaskProgressState> = {
           ...(dayLog.progress || {}),
@@ -1184,10 +1180,23 @@ export const PlannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         newProgress[taskId] = {
           ...prog,
           status: 'running',
+          workedSeconds: workedSec,
           lastStartedTimestamp: now,
           pausedTimestamp: null,
+          plannedDurationSeconds: plannedSec,
           updatedAt: now,
         };
+
+        // Cascade all other non-completed tasks to guarantee sequential execution without overlaps
+        newOverrides = cascadeSchedule(
+          prev.tasks,
+          newOverrides,
+          dayLog.completedTaskIds || [],
+          dayLog.excludedTaskIds || [],
+          dayOfWeek,
+          taskId,
+          newEndTime
+        );
 
         newHistory[selectedDateStr] = {
           ...dayLog,
